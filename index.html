@@ -1,0 +1,2119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#090d16" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <title>큐플레이어 — 오디오 타임라인 &amp; 큐 컨트롤</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+      background-color: #090d16;
+      color: #f1f5f9;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior-y: contain;
+    }
+    .font-mono-num {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f1623;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #273247;
+      border-radius: 9999px;
+    }
+    .btn-press {
+      transition: transform 0.08s ease, filter 0.12s ease, background-color 0.15s ease;
+    }
+    .btn-press:active {
+      transform: scale(0.95);
+    }
+    #waveformCanvas, #eqInlineCanvas, #eqFullCanvas {
+      touch-action: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-[#090d16] text-slate-100 select-none">
+
+  <!-- Top App Bar -->
+  <header class="sticky top-0 z-30 bg-[#0d1320]/95 backdrop-blur border-b border-slate-800/80 px-3 sm:px-5 py-2.5">
+    <div class="max-w-4xl mx-auto flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center shrink-0">
+          <i data-lucide="audio-waveform" class="w-4 h-4 text-emerald-400"></i>
+        </div>
+        <div class="min-w-0">
+          <h1 class="text-sm sm:text-base font-bold tracking-tight text-white truncate">큐플레이어</h1>
+          <p class="text-[11px] text-slate-400 truncate">음원 타임라인 · 파형 · 6밴드 파라메트릭 EQ &amp; RTA</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <label for="audioFileInput" class="btn-press inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs sm:text-sm cursor-pointer shadow-lg shadow-cyan-500/20">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span>음원 추가</span>
+        </label>
+        <input id="audioFileInput" type="file" accept="audio/*" multiple class="hidden" />
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-4xl w-full mx-auto px-3 sm:px-5 pt-3 pb-44 sm:pb-40 flex flex-col gap-3">
+
+    <!-- Active/Selected Cue Inspector Card -->
+    <section class="bg-[#111827] border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xl">
+      <!-- Background Running Cue Indicator -->
+      <div id="bgRunningBanner" class="hidden mb-2.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+          <span id="bgRunningText" class="text-[11px] sm:text-xs font-semibold text-emerald-300 truncate">CUE 01 재생 중</span>
+        </div>
+        <button id="jumpToPlayingBtn" type="button" class="btn-press text-[11px] font-bold text-emerald-300 hover:text-white px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 shrink-0">
+          재생 곡으로 보기
+        </button>
+      </div>
+
+      <!-- Selected Track Info Row -->
+      <div class="flex items-start justify-between gap-3 mb-2.5">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 mb-1">
+            <span id="activeCueNumberBadge" class="font-mono-num text-xs font-bold px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+              CUE 01
+            </span>
+            <span id="playStatusBadge" class="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+              <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+              선택 대기
+            </span>
+          </div>
+          <h2 id="activeTrackName" class="text-sm sm:text-base font-bold text-white truncate">
+            트랙을 선택하세요
+          </h2>
+        </div>
+
+        <!-- Time Display -->
+        <div class="text-right shrink-0">
+          <div class="font-mono-num text-base sm:text-xl font-bold text-cyan-300 leading-tight">
+            <span id="currentTimeText">00:00.0</span>
+          </div>
+          <div class="font-mono-num text-[11px] text-slate-400">
+            총 <span id="totalTimeText">00:00.0</span> · 남은 <span id="remainingTimeText">-00:00.0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cue Settings Category Tabs -->
+      <div class="grid grid-cols-4 gap-1 p-1 rounded-xl bg-[#090d16] border border-slate-800/80 mb-3" id="inspectorTabs">
+        <button type="button" data-tab="waveform" class="inspector-tab-btn btn-press flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-colors">
+          <i data-lucide="audio-waveform" class="w-3.5 h-3.5"></i>
+          <span>파형</span>
+        </button>
+        <button type="button" data-tab="transpose" class="inspector-tab-btn btn-press flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-colors">
+          <i data-lucide="music" class="w-3.5 h-3.5"></i>
+          <span>트랜스포즈</span>
+        </button>
+        <button type="button" data-tab="eq" class="inspector-tab-btn btn-press flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-colors">
+          <i data-lucide="sliders-vertical" class="w-3.5 h-3.5"></i>
+          <span>EQ</span>
+        </button>
+        <button type="button" data-tab="gain" class="inspector-tab-btn btn-press flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-colors">
+          <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
+          <span>게인</span>
+        </button>
+      </div>
+
+      <!-- Tab Panel 1: Waveform & End Action -->
+      <div id="tabPanelWaveform" class="inspector-panel">
+        <div class="relative rounded-xl bg-[#090d16] border border-slate-800/90 overflow-hidden mb-3">
+          <div id="waveformContainer" class="relative w-full h-28 sm:h-32">
+            <canvas id="waveformCanvas" class="w-full h-full block"></canvas>
+            <div id="waveformEmptyOverlay" class="hidden absolute inset-0 flex items-center justify-center text-xs text-slate-500 pointer-events-none">
+              음원을 추가하거나 아래 큐를 선택하면 파형이 표시됩니다
+            </div>
+          </div>
+          <div class="flex items-center justify-between px-2.5 py-1 bg-[#0c121e] border-t border-slate-800/70 text-[10px] text-slate-400">
+            <span id="waveformHintText" class="flex items-center gap-1">
+              <i data-lucide="mouse-pointer-click" class="w-3 h-3 text-cyan-400"></i>
+              파형의 원하는 위치를 터치/클릭하면 즉시 해당 구간부터 재생됩니다
+            </span>
+            <span id="hoverTimeHint" class="font-mono-num text-cyan-400 hidden sm:inline"></span>
+          </div>
+        </div>
+
+        <!-- End-of-Cue Behavior Selector -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-slate-800/70">
+          <div class="flex items-center gap-1.5 text-xs text-slate-300 font-medium">
+            <i data-lucide="settings-2" class="w-3.5 h-3.5 text-slate-400"></i>
+            <span>이 곡이 끝나면:</span>
+          </div>
+          <div class="grid grid-cols-3 gap-1.5 w-full sm:w-auto" id="endActionSegmented">
+            <button type="button" data-action="stop" class="end-action-btn btn-press flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors">
+              <i data-lucide="square" class="w-3.5 h-3.5"></i>
+              <span>끝나면 정지</span>
+            </button>
+            <button type="button" data-action="next" class="end-action-btn btn-press flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors">
+              <i data-lucide="skip-forward" class="w-3.5 h-3.5"></i>
+              <span>다음 곡 바로</span>
+            </button>
+            <button type="button" data-action="loop" class="end-action-btn btn-press flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors">
+              <i data-lucide="repeat" class="w-3.5 h-3.5"></i>
+              <span>현재 곡 반복</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Panel 2: Transpose -->
+      <div id="tabPanelTranspose" class="inspector-panel hidden">
+        <div class="rounded-xl bg-[#090d16] border border-slate-800/90 p-3.5 sm:p-4">
+          <div class="flex items-center justify-between gap-2 mb-3">
+            <div class="min-w-0">
+              <div class="text-xs sm:text-sm font-bold text-white">키(음정) 트랜스포즈</div>
+              <div class="text-[11px] text-slate-400 truncate">선택한 곡의 피치를 반음(-12 ~ +12) 단위로 조절합니다</div>
+            </div>
+            <div id="transposeValueBadge" class="font-mono-num text-xs sm:text-sm font-extrabold px-2.5 py-1 rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 whitespace-nowrap shrink-0">
+              0 키
+            </div>
+          </div>
+
+          <input id="transposeSlider" type="range" min="-12" max="12" step="1" value="0" class="w-full accent-cyan-400 h-2 bg-slate-800 rounded-lg cursor-pointer mb-3" />
+
+          <div class="grid grid-cols-3 gap-2">
+            <button id="transposeDownBtn" type="button" class="btn-press py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200">
+              -1 반음 내림
+            </button>
+            <button id="transposeResetBtn" type="button" class="btn-press py-2 rounded-lg bg-slate-800/70 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-cyan-300">
+              원키 (0)
+            </button>
+            <button id="transposeUpBtn" type="button" class="btn-press py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200">
+              +1 반음 올림
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Panel 3: 6-Band Parametric EQ (Inline Preview + Open Fullscreen Drawer) -->
+      <div id="tabPanelEq" class="inspector-panel hidden">
+        <div class="rounded-xl bg-[#090d16] border border-slate-800/90 p-3">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <div class="min-w-0">
+              <div class="text-xs sm:text-sm font-bold text-white truncate">6밴드 파라메트릭 EQ + RTA</div>
+              <div class="text-[10px] sm:text-[11px] text-slate-400 truncate">HPF · Low · L-Mid · Mid · H-Mid · LPF</div>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button id="eqInlineResetBtn" type="button" class="btn-press px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-slate-300 whitespace-nowrap">
+                초기화
+              </button>
+              <button id="openEqDrawerBtn" type="button" class="btn-press inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-[11px] font-bold whitespace-nowrap shadow shadow-cyan-500/20">
+                <i data-lucide="maximize-2" class="w-3 h-3"></i>
+                <span>전체보기</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Inline Interactive EQ + RTA Canvas -->
+          <div class="relative w-full h-36 sm:h-44 rounded-lg bg-[#060910] border border-slate-800/90 overflow-hidden mb-2.5">
+            <canvas id="eqInlineCanvas" class="w-full h-full block"></canvas>
+          </div>
+
+          <!-- Quick Band Selector & Mini Controls -->
+          <div class="grid grid-cols-6 gap-1 mb-2" id="eqInlineBandPills"></div>
+          <div class="grid grid-cols-3 gap-2 text-[11px]" id="eqInlineMiniSliders">
+            <div class="bg-[#111827] rounded-lg px-2 py-1.5 border border-slate-800">
+              <div class="flex justify-between text-slate-400 mb-1"><span>FREQ</span><span id="eqInlineFreqVal" class="font-mono-num text-cyan-300 font-semibold">1000Hz</span></div>
+              <input id="eqInlineFreqSlider" type="range" min="0" max="1000" value="500" class="w-full accent-cyan-400 h-1 bg-slate-800 rounded cursor-pointer" />
+            </div>
+            <div class="bg-[#111827] rounded-lg px-2 py-1.5 border border-slate-800">
+              <div class="flex justify-between text-slate-400 mb-1"><span>GAIN</span><span id="eqInlineGainVal" class="font-mono-num text-emerald-300 font-semibold">0.0dB</span></div>
+              <input id="eqInlineGainSlider" type="range" min="-15" max="15" step="0.5" value="0" class="w-full accent-emerald-400 h-1 bg-slate-800 rounded cursor-pointer" />
+            </div>
+            <div class="bg-[#111827] rounded-lg px-2 py-1.5 border border-slate-800">
+              <div class="flex justify-between text-slate-400 mb-1"><span>Q</span><span id="eqInlineQVal" class="font-mono-num text-amber-300 font-semibold">1.0</span></div>
+              <input id="eqInlineQSlider" type="range" min="0.3" max="8" step="0.1" value="1" class="w-full accent-amber-400 h-1 bg-slate-800 rounded cursor-pointer" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Panel 4: Per-Cue Gain (dB primary, no wrapping!) -->
+      <div id="tabPanelGain" class="inspector-panel hidden">
+        <div class="rounded-xl bg-[#090d16] border border-slate-800/90 p-3.5 sm:p-4">
+          <div class="flex items-center justify-between gap-2 mb-3">
+            <div class="min-w-0">
+              <div class="text-xs sm:text-sm font-bold text-white">개별 곡 게인 (Cue Gain)</div>
+              <div class="text-[11px] text-slate-400 truncate">기준 0.0 dB · 곡마다 다른 음량 편차를 보정합니다</div>
+            </div>
+            <div id="cueGainBadge" class="font-mono-num px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 whitespace-nowrap shrink-0 flex items-baseline gap-1">
+              <span id="cueGainDbText" class="text-xs sm:text-sm font-extrabold">0.0 dB</span>
+              <span id="cueGainPctText" class="text-[10px] font-medium opacity-75">(100%)</span>
+            </div>
+          </div>
+
+          <input id="cueGainSlider" type="range" min="-24" max="6" step="0.5" value="0" class="w-full accent-emerald-400 h-2 bg-slate-800 rounded-lg cursor-pointer mb-3" />
+
+          <div class="grid grid-cols-4 gap-2">
+            <button type="button" data-gain-db="-6" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300">-6 dB</button>
+            <button type="button" data-gain-db="-3" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300">-3 dB</button>
+            <button type="button" data-gain-db="0" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-emerald-300">0 dB (기본)</button>
+            <button type="button" data-gain-db="3" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300">+3 dB</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cue Timeline -->
+    <section class="flex-1 flex flex-col bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+      <div class="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 bg-[#151e30] border-b border-slate-800">
+        <div class="flex items-center gap-2">
+          <i data-lucide="list-music" class="w-4 h-4 text-cyan-400"></i>
+          <h3 class="text-xs sm:text-sm font-bold text-slate-100">음원 큐 타임라인</h3>
+          <span id="cueCountBadge" class="font-mono-num text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">0곡</span>
+        </div>
+
+        <div class="flex items-center gap-2.5">
+          <span class="hidden sm:inline text-[11px] text-slate-400">
+            방향키·터치 이동 시 재생 중인 곡은 유지 · <span class="text-emerald-400 font-semibold">GO</span>로 실행
+          </span>
+          <button id="clearAllCuesBtn" type="button" class="btn-press px-2 py-1 rounded-md bg-slate-800 hover:bg-rose-500/20 border border-slate-700 hover:border-rose-500/40 text-[11px] font-semibold text-slate-300 hover:text-rose-300">
+            목록 비우기
+          </button>
+        </div>
+      </div>
+
+      <!-- Column Header -->
+      <div class="grid grid-cols-[44px_1fr_auto_auto] sm:grid-cols-[56px_1fr_110px_84px_72px] items-center gap-2 px-3 sm:px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-800/70 bg-[#0f1624]">
+        <span>번호</span>
+        <span>파일명 / 실시간 파형</span>
+        <span class="hidden sm:block text-center">종료 후 설정</span>
+        <span class="text-right">재생시간</span>
+        <span class="text-right">순서/삭제</span>
+      </div>
+
+      <!-- Cue List Container -->
+      <div id="cueListContainer" class="flex-1 divide-y divide-slate-800/70 overflow-y-auto max-h-[380px] sm:max-h-[420px]">
+      </div>
+
+      <!-- Drag & Drop / Add More Footer -->
+      <div id="dropZoneFooter" class="px-3 py-2.5 bg-[#0c121e] border-t border-slate-800/80 text-center text-[11px] text-slate-400">
+        파일을 여기로 끌어다 놓거나 상단 <strong class="text-cyan-400">+ 음원 추가</strong> 버튼을 눌러 MP3, WAV, M4A 파일을 넣으세요.
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Fixed Bottom Mobile Transport Deck -->
+  <footer class="fixed bottom-0 inset-x-0 z-40 bg-[#0b101b]/95 backdrop-blur-md border-t border-slate-800 px-3 sm:px-5 pt-2.5 pb-3 shadow-[0_-10px_30px_rgba(0,0,0,0.6)]">
+    <div class="max-w-4xl mx-auto">
+      <div class="w-full h-1 bg-slate-800 rounded-full overflow-hidden mb-2.5">
+        <div id="miniProgressBar" class="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 w-0 transition-[width] duration-75"></div>
+      </div>
+
+      <div class="grid grid-cols-4 gap-2 sm:gap-3">
+        <button id="prevCueBtn" type="button" class="btn-press flex flex-col items-center justify-center py-2.5 sm:py-3 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-100">
+          <div class="flex items-center gap-1">
+            <i data-lucide="chevron-left" class="w-6 h-6 text-cyan-400"></i>
+          </div>
+          <span class="text-[11px] sm:text-xs font-semibold mt-0.5">이전 곡</span>
+        </button>
+
+        <button id="playPauseBtn" type="button" class="btn-press col-span-2 flex items-center justify-center gap-2.5 py-2.5 sm:py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/25">
+          <i id="playPauseIcon" data-lucide="play" class="w-7 h-7 fill-current"></i>
+          <div class="text-left leading-tight">
+            <div id="playPauseLabel" class="text-base sm:text-lg tracking-tight">GO · 재생</div>
+            <div id="playPauseSub" class="text-[10px] font-semibold opacity-80">터치하여 실행</div>
+          </div>
+        </button>
+
+        <button id="nextCueBtn" type="button" class="btn-press flex flex-col items-center justify-center py-2.5 sm:py-3 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-100">
+          <div class="flex items-center gap-1">
+            <i data-lucide="chevron-right" class="w-6 h-6 text-cyan-400"></i>
+          </div>
+          <span class="text-[11px] sm:text-xs font-semibold mt-0.5">다음 곡</span>
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 mt-2 pt-1.5 border-t border-slate-800/60">
+        <button id="stopBtn" type="button" class="btn-press inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-semibold">
+          <i data-lucide="square" class="w-3.5 h-3.5 fill-current"></i>
+          <span>정지 (처음으로)</span>
+        </button>
+
+        <div class="flex items-center gap-2 flex-1 max-w-[210px]">
+          <i data-lucide="volume-2" class="w-4 h-4 text-slate-400 shrink-0"></i>
+          <input id="volumeSlider" type="range" min="0" max="1" step="0.01" value="0.9" class="w-full accent-cyan-400 h-1.5 bg-slate-800 rounded-lg cursor-pointer" />
+          <span id="volumeLabel" class="font-mono-num text-[11px] text-slate-400 w-8 text-right">90%</span>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Fullscreen Slide-Over Parametric EQ + RTA Drawer (with Blurred Backdrop) -->
+  <div id="eqDrawerOverlay" class="fixed inset-0 z-50 pointer-events-none opacity-0 transition-opacity duration-300">
+    <!-- Blurred Backdrop -->
+    <div id="eqDrawerBackdrop" class="absolute inset-0 bg-black/55 backdrop-blur-md"></div>
+
+    <!-- Slide-in Panel from Right -->
+    <aside id="eqDrawerPanel" class="absolute inset-y-0 right-0 w-full sm:w-[92%] max-w-5xl bg-[#0b101b]/95 border-l border-slate-700/80 shadow-2xl flex flex-col transform translate-x-full transition-transform duration-300 ease-out overflow-y-auto">
+      <!-- Drawer Header + Mini Now Playing Bar -->
+      <div class="sticky top-0 z-10 bg-[#0d1422]/95 backdrop-blur border-b border-slate-800 px-3 sm:px-5 py-2.5 flex flex-col gap-2">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="w-2 h-2 rounded-full bg-cyan-400 shrink-0"></span>
+            <h2 class="text-sm sm:text-base font-bold text-white truncate">6밴드 파라메트릭 EQ &amp; 실시간 RTA</h2>
+            <span id="eqDrawerCueTag" class="font-mono-num text-[11px] px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shrink-0">CUE 01</span>
+          </div>
+
+          <div class="flex items-center gap-2 shrink-0">
+            <button id="eqDrawerResetBtn" type="button" class="btn-press px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300">
+              초기화
+            </button>
+            <button id="closeEqDrawerBtn" type="button" class="btn-press inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-bold text-white">
+              <i data-lucide="x" class="w-4 h-4"></i>
+              <span>닫기</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Compact Now-Playing Remaining Time & Progress Bar inside EQ Drawer -->
+        <div class="flex items-center gap-3 bg-[#080c15] border border-slate-800/80 rounded-xl px-3 py-1.5">
+          <button id="eqDrawerPlayBtn" type="button" class="btn-press w-7 h-7 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center shrink-0">
+            <i id="eqDrawerPlayIcon" data-lucide="play" class="w-4 h-4 fill-current"></i>
+          </button>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-2 text-[11px] mb-1">
+              <span id="eqDrawerPlayingName" class="font-semibold text-slate-200 truncate">재생 중인 곡 없음</span>
+              <span id="eqDrawerRemainingText" class="font-mono-num font-bold text-cyan-300 shrink-0">-00:00.0</span>
+            </div>
+            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div id="eqDrawerProgressBar" class="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 w-0 transition-[width] duration-75"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drawer Body (adapts smoothly to both portrait and landscape) -->
+      <div class="flex-1 p-3 sm:p-5 flex flex-col landscape:flex-row lg:flex-row gap-3 sm:gap-4 min-h-0">
+        <!-- Large EQ + RTA Canvas -->
+        <div class="flex-1 flex flex-col min-h-[220px] sm:min-h-[300px] bg-[#060910] border border-slate-800 rounded-2xl overflow-hidden">
+          <div class="flex items-center justify-between px-3 py-1.5 bg-[#0c121e] border-b border-slate-800/80 text-[10px] sm:text-[11px] text-slate-400">
+            <span>드래그하여 주파수(Hz)·게인(dB) 직접 조절 · 배경 실시간 RTA 스펙트럼</span>
+            <span id="eqFullHoverInfo" class="font-mono-num text-cyan-300">20Hz - 20kHz</span>
+          </div>
+          <div class="relative flex-1 min-h-[190px]">
+            <canvas id="eqFullCanvas" class="w-full h-full block"></canvas>
+          </div>
+        </div>
+
+        <!-- Band Selector & Precision Controls -->
+        <div class="w-full landscape:w-72 lg:w-80 shrink-0 flex flex-col gap-2.5 bg-[#111827] border border-slate-800 rounded-2xl p-3">
+          <!-- 6 Band Pills -->
+          <div class="grid grid-cols-3 gap-1.5" id="eqFullBandPills"></div>
+
+          <!-- Selected Band Header + Enable Toggle -->
+          <div class="flex items-center justify-between pt-1 border-t border-slate-800">
+            <div class="flex items-center gap-2">
+              <span id="eqFullSelectedDot" class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+              <span id="eqFullSelectedTitle" class="text-xs sm:text-sm font-bold text-white">MID (Peaking)</span>
+            </div>
+            <button id="eqFullBandToggleBtn" type="button" class="btn-press px-2.5 py-1 rounded-md text-[11px] font-bold border">
+              ON
+            </button>
+          </div>
+
+          <!-- Frequency Slider -->
+          <div class="bg-[#090d16] rounded-xl p-2.5 border border-slate-800/90">
+            <div class="flex justify-between text-xs mb-1.5">
+              <span class="text-slate-400 font-medium">주파수 (Frequency)</span>
+              <span id="eqFullFreqVal" class="font-mono-num font-bold text-cyan-300">1000 Hz</span>
+            </div>
+            <input id="eqFullFreqSlider" type="range" min="0" max="1000" value="500" class="w-full accent-cyan-400 h-2 bg-slate-800 rounded-lg cursor-pointer" />
+          </div>
+
+          <!-- Gain Slider -->
+          <div id="eqFullGainBox" class="bg-[#090d16] rounded-xl p-2.5 border border-slate-800/90">
+            <div class="flex justify-between text-xs mb-1.5">
+              <span class="text-slate-400 font-medium">게인 (Gain)</span>
+              <span id="eqFullGainVal" class="font-mono-num font-bold text-emerald-300">0.0 dB</span>
+            </div>
+            <input id="eqFullGainSlider" type="range" min="-15" max="15" step="0.5" value="0" class="w-full accent-emerald-400 h-2 bg-slate-800 rounded-lg cursor-pointer" />
+          </div>
+
+          <!-- Q Factor Slider -->
+          <div class="bg-[#090d16] rounded-xl p-2.5 border border-slate-800/90">
+            <div class="flex justify-between text-xs mb-1.5">
+              <span class="text-slate-400 font-medium">대역폭 (Q Factor)</span>
+              <span id="eqFullQVal" class="font-mono-num font-bold text-amber-300">1.00</span>
+            </div>
+            <input id="eqFullQSlider" type="range" min="0.3" max="8" step="0.1" value="1" class="w-full accent-amber-400 h-2 bg-slate-800 rounded-lg cursor-pointer" />
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-slate-800 border border-slate-700 text-xs font-medium text-white shadow-2xl opacity-0 pointer-events-none transition-opacity duration-200"></div>
+
+  <script>
+    let audioCtx = null;
+    let masterGainNode = null;
+    let cueGainNode = null;
+    let analyserNode = null;
+    let eqFilterNodes = []; // 6 BiquadFilterNodes matching cue.eq[0..5]
+    let sourceNode = null;
+    let rtaBins = null;
+
+    const DEFAULT_EQ_BANDS = () => ([
+      { id: 'hpf', type: 'highpass', label: 'HPF',   freq: 20,    gain: 0, q: 0.7, enabled: false, color: '#f43f5e' },
+      { id: 'b1',  type: 'lowshelf', label: 'LOW',   freq: 80,    gain: 0, q: 0.8, enabled: true,  color: '#06b6d4' },
+      { id: 'b2',  type: 'peaking',  label: 'L-MID', freq: 250,   gain: 0, q: 1.0, enabled: true,  color: '#10b981' },
+      { id: 'b3',  type: 'peaking',  label: 'MID',   freq: 1000,  gain: 0, q: 1.0, enabled: true,  color: '#f59e0b' },
+      { id: 'b4',  type: 'peaking',  label: 'H-MID', freq: 4000,  gain: 0, q: 1.0, enabled: true,  color: '#8b5cf6' },
+      { id: 'lpf', type: 'lowpass',  label: 'LPF',   freq: 20000, gain: 0, q: 0.7, enabled: false, color: '#ec4899' }
+    ]);
+
+    const state = {
+      cues: [],
+      selectedCueId: null,
+      playingCueId: null,
+      isPlaying: false,
+      playingOffsetSec: 0,
+      playStartCtxTime: 0,
+      masterVolume: 0.9,
+      activeTab: 'waveform',
+      selectedEqBandIdx: 3, // default MID
+      eqDrawerOpen: false,
+      rafId: null,
+      toastTimer: null,
+      isDraggingWave: false,
+      draggingEqTarget: null // { canvasType: 'inline'|'full', bandIdx }
+    };
+
+    const END_ACTION_META = {
+      stop: { label: '끝나면 정지', short: '정지', icon: 'square', badgeClass: 'bg-slate-800 text-slate-300 border-slate-700' },
+      next: { label: '다음 곡 바로', short: '다음곡', icon: 'skip-forward', badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+      loop: { label: '현재 곡 반복', short: '반복', icon: 'repeat', badgeClass: 'bg-violet-500/15 text-violet-300 border-violet-500/40' }
+    };
+
+    // DOM References
+    const audioFileInput = document.getElementById('audioFileInput');
+    const cueListContainer = document.getElementById('cueListContainer');
+    const cueCountBadge = document.getElementById('cueCountBadge');
+    const bgRunningBanner = document.getElementById('bgRunningBanner');
+    const bgRunningText = document.getElementById('bgRunningText');
+    const jumpToPlayingBtn = document.getElementById('jumpToPlayingBtn');
+
+    const activeCueNumberBadge = document.getElementById('activeCueNumberBadge');
+    const playStatusBadge = document.getElementById('playStatusBadge');
+    const activeTrackName = document.getElementById('activeTrackName');
+    const currentTimeText = document.getElementById('currentTimeText');
+    const totalTimeText = document.getElementById('totalTimeText');
+    const remainingTimeText = document.getElementById('remainingTimeText');
+    const waveformCanvas = document.getElementById('waveformCanvas');
+    const waveformEmptyOverlay = document.getElementById('waveformEmptyOverlay');
+    const waveformHintText = document.getElementById('waveformHintText');
+    const hoverTimeHint = document.getElementById('hoverTimeHint');
+    const miniProgressBar = document.getElementById('miniProgressBar');
+
+    const prevCueBtn = document.getElementById('prevCueBtn');
+    const nextCueBtn = document.getElementById('nextCueBtn');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const playPauseIcon = document.getElementById('playPauseIcon');
+    const playPauseLabel = document.getElementById('playPauseLabel');
+    const playPauseSub = document.getElementById('playPauseSub');
+    const stopBtn = document.getElementById('stopBtn');
+    const volumeSlider = document.getElementById('volumeSlider');
+    const volumeLabel = document.getElementById('volumeLabel');
+    const dropZoneFooter = document.getElementById('dropZoneFooter');
+    const toastEl = document.getElementById('toast');
+
+    // Transpose & Gain Controls
+    const transposeSlider = document.getElementById('transposeSlider');
+    const transposeValueBadge = document.getElementById('transposeValueBadge');
+    const transposeDownBtn = document.getElementById('transposeDownBtn');
+    const transposeResetBtn = document.getElementById('transposeResetBtn');
+    const transposeUpBtn = document.getElementById('transposeUpBtn');
+
+    const cueGainSlider = document.getElementById('cueGainSlider');
+    const cueGainDbText = document.getElementById('cueGainDbText');
+    const cueGainPctText = document.getElementById('cueGainPctText');
+
+    // EQ Inline & Drawer Controls
+    const eqInlineCanvas = document.getElementById('eqInlineCanvas');
+    const eqInlineBandPills = document.getElementById('eqInlineBandPills');
+    const eqInlineFreqSlider = document.getElementById('eqInlineFreqSlider');
+    const eqInlineGainSlider = document.getElementById('eqInlineGainSlider');
+    const eqInlineQSlider = document.getElementById('eqInlineQSlider');
+    const eqInlineFreqVal = document.getElementById('eqInlineFreqVal');
+    const eqInlineGainVal = document.getElementById('eqInlineGainVal');
+    const eqInlineQVal = document.getElementById('eqInlineQVal');
+    const eqInlineResetBtn = document.getElementById('eqInlineResetBtn');
+    const openEqDrawerBtn = document.getElementById('openEqDrawerBtn');
+
+    const eqDrawerOverlay = document.getElementById('eqDrawerOverlay');
+    const eqDrawerBackdrop = document.getElementById('eqDrawerBackdrop');
+    const eqDrawerPanel = document.getElementById('eqDrawerPanel');
+    const closeEqDrawerBtn = document.getElementById('closeEqDrawerBtn');
+    const eqDrawerResetBtn = document.getElementById('eqDrawerResetBtn');
+    const eqDrawerCueTag = document.getElementById('eqDrawerCueTag');
+    const eqDrawerPlayBtn = document.getElementById('eqDrawerPlayBtn');
+    const eqDrawerPlayIcon = document.getElementById('eqDrawerPlayIcon');
+    const eqDrawerPlayingName = document.getElementById('eqDrawerPlayingName');
+    const eqDrawerRemainingText = document.getElementById('eqDrawerRemainingText');
+    const eqDrawerProgressBar = document.getElementById('eqDrawerProgressBar');
+    const eqFullCanvas = document.getElementById('eqFullCanvas');
+    const eqFullHoverInfo = document.getElementById('eqFullHoverInfo');
+    const eqFullBandPills = document.getElementById('eqFullBandPills');
+    const eqFullSelectedDot = document.getElementById('eqFullSelectedDot');
+    const eqFullSelectedTitle = document.getElementById('eqFullSelectedTitle');
+    const eqFullBandToggleBtn = document.getElementById('eqFullBandToggleBtn');
+    const eqFullFreqSlider = document.getElementById('eqFullFreqSlider');
+    const eqFullGainSlider = document.getElementById('eqFullGainSlider');
+    const eqFullQSlider = document.getElementById('eqFullQSlider');
+    const eqFullFreqVal = document.getElementById('eqFullFreqVal');
+    const eqFullGainVal = document.getElementById('eqFullGainVal');
+    const eqFullQVal = document.getElementById('eqFullQVal');
+    const eqFullGainBox = document.getElementById('eqFullGainBox');
+
+    // =========================================================
+    // Audio Engine Setup
+    // =========================================================
+    function ensureAudioContext() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContextClass();
+
+        eqFilterNodes = DEFAULT_EQ_BANDS().map(b => {
+          const node = audioCtx.createBiquadFilter();
+          node.type = b.type;
+          node.frequency.value = b.freq;
+          node.Q.value = b.q;
+          node.gain.value = b.gain;
+          return node;
+        });
+
+        for (let i = 0; i < eqFilterNodes.length - 1; i++) {
+          eqFilterNodes[i].connect(eqFilterNodes[i + 1]);
+        }
+
+        cueGainNode = audioCtx.createGain();
+        analyserNode = audioCtx.createAnalyser();
+        analyserNode.fftSize = 2048;
+        analyserNode.smoothingTimeConstant = 0.78;
+        rtaBins = new Uint8Array(analyserNode.frequencyBinCount);
+
+        masterGainNode = audioCtx.createGain();
+        masterGainNode.gain.value = state.masterVolume;
+
+        eqFilterNodes[eqFilterNodes.length - 1].connect(cueGainNode);
+        cueGainNode.connect(analyserNode);
+        analyserNode.connect(masterGainNode);
+        masterGainNode.connect(audioCtx.destination);
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function applyCueDspToLiveGraph(cue) {
+      if (!audioCtx || !cue) return;
+      cue.eq.forEach((band, i) => {
+        const node = eqFilterNodes[i];
+        if (!node) return;
+        if (!band.enabled) {
+          if (band.type === 'highpass') {
+            node.type = 'highpass';
+            node.frequency.value = 10;
+            node.Q.value = 0.707;
+          } else if (band.type === 'lowpass') {
+            node.type = 'lowpass';
+            node.frequency.value = 22000;
+            node.Q.value = 0.707;
+          } else {
+            node.type = band.type;
+            node.frequency.value = band.freq;
+            node.Q.value = band.q;
+            node.gain.value = 0;
+          }
+        } else {
+          node.type = band.type;
+          node.frequency.value = band.freq;
+          node.Q.value = band.q;
+          node.gain.value = band.gain;
+        }
+      });
+
+      cueGainNode.gain.value = Math.pow(10, cue.gainDb / 20);
+      if (sourceNode && state.playingCueId === cue.id) {
+        sourceNode.detune.value = cue.transpose * 100;
+      }
+    }
+
+    function extractPeaks(audioBuffer, numBars = 220) {
+      const channelData = audioBuffer.getChannelData(0);
+      const blockSize = Math.max(1, Math.floor(channelData.length / numBars));
+      const peaks = new Float32Array(numBars);
+      let maxPeak = 0.01;
+
+      for (let i = 0; i < numBars; i++) {
+        const start = i * blockSize;
+        const end = Math.min(channelData.length, start + blockSize);
+        let peak = 0;
+        const step = Math.max(1, Math.floor((end - start) / 64));
+        for (let j = start; j < end; j += step) {
+          const val = Math.abs(channelData[j]);
+          if (val > peak) peak = val;
+        }
+        peaks[i] = peak;
+        if (peak > maxPeak) maxPeak = peak;
+      }
+
+      for (let i = 0; i < numBars; i++) {
+        peaks[i] = Math.min(1, peaks[i] / maxPeak);
+      }
+      return peaks;
+    }
+
+    function createDemoBuffer(type, durationSec) {
+      ensureAudioContext();
+      const sampleRate = audioCtx.sampleRate;
+      const length = Math.floor(sampleRate * durationSec);
+      const buffer = audioCtx.createBuffer(1, length, sampleRate);
+      const data = buffer.getChannelData(0);
+
+      for (let i = 0; i < length; i++) {
+        const t = i / sampleRate;
+        let sample = 0;
+
+        if (type === 'pad') {
+          const env = Math.sin(Math.PI * Math.min(1, t / durationSec));
+          sample = (
+            Math.sin(2 * Math.PI * 220 * t) * 0.35 +
+            Math.sin(2 * Math.PI * 277.18 * t) * 0.25 +
+            Math.sin(2 * Math.PI * 329.63 * t) * 0.25 +
+            Math.sin(2 * Math.PI * 440 * t) * 0.15
+          ) * env * 0.6;
+        } else if (type === 'chime') {
+          const beat = t % 1.5;
+          const hitEnv = Math.exp(-beat * 3.2);
+          const freq = t < 1.5 ? 523.25 : (t < 3.0 ? 659.25 : 783.99);
+          sample = (Math.sin(2 * Math.PI * freq * t) * 0.6 + Math.sin(2 * Math.PI * freq * 2 * t) * 0.2) * hitEnv * 0.8;
+        } else if (type === 'pulse') {
+          const beatTime = t % 0.5;
+          const kick = Math.exp(-beatTime * 14) * Math.sin(2 * Math.PI * (110 - beatTime * 120) * beatTime);
+          const arpFreq = [261.63, 329.63, 392.0, 523.25][Math.floor(t * 4) % 4];
+          const arp = Math.exp(-(t % 0.25) * 8) * Math.sin(2 * Math.PI * arpFreq * t) * 0.4;
+          sample = (kick * 0.6 + arp) * 0.7;
+        } else {
+          const env = Math.max(0, 1 - t / durationSec);
+          sample = (Math.sin(2 * Math.PI * 196 * t) * 0.4 + Math.sin(2 * Math.PI * 293.66 * t) * 0.35) * env * 0.7;
+        }
+
+        data[i] = Math.max(-0.95, Math.min(0.95, sample));
+      }
+      return buffer;
+    }
+
+    function createCueObject({ id, name, buffer, endAction = 'stop', isDemo = false }) {
+      return {
+        id,
+        name,
+        duration: buffer.duration,
+        buffer,
+        peaks: extractPeaks(buffer),
+        endAction,
+        transpose: 0,
+        eq: DEFAULT_EQ_BANDS(),
+        gainDb: 0,
+        standbyOffsetSec: 0,
+        isDemo
+      };
+    }
+
+    function initDemoCues() {
+      const demos = [
+        { name: '01_오프닝_앰비언스_샘플.wav', type: 'pad', duration: 6.0, endAction: 'next' },
+        { name: '02_등장_차임_효과음_샘플.wav', type: 'chime', duration: 4.5, endAction: 'stop' },
+        { name: '03_메인_리듬_루프_샘플.wav', type: 'pulse', duration: 6.0, endAction: 'loop' },
+        { name: '04_엔딩_아웃트로_샘플.wav', type: 'outro', duration: 5.0, endAction: 'stop' }
+      ];
+
+      demos.forEach((d, idx) => {
+        const buffer = createDemoBuffer(d.type, d.duration);
+        state.cues.push(createCueObject({
+          id: 'demo-' + (idx + 1) + '-' + Date.now(),
+          name: d.name,
+          buffer,
+          endAction: d.endAction,
+          isDemo: true
+        }));
+      });
+
+      if (state.cues.length > 0) {
+        state.selectedCueId = state.cues[0].id;
+      }
+      renderAll();
+    }
+
+    function formatTime(sec) {
+      if (!Number.isFinite(sec) || sec < 0) sec = 0;
+      const mins = Math.floor(sec / 60);
+      const secs = Math.floor(sec % 60);
+      const tenths = Math.floor((sec % 1) * 10);
+      return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${tenths}`;
+    }
+
+    function formatFreq(hz) {
+      if (hz >= 1000) return (hz / 1000).toFixed(hz >= 10000 ? 1 : 2).replace(/\.00$/, '') + ' kHz';
+      return Math.round(hz) + ' Hz';
+    }
+
+    function showToast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.remove('opacity-0');
+      toastEl.classList.add('opacity-100');
+      clearTimeout(state.toastTimer);
+      state.toastTimer = setTimeout(() => {
+        toastEl.classList.remove('opacity-100');
+        toastEl.classList.add('opacity-0');
+      }, 2200);
+    }
+
+    function getCueIndexById(id) {
+      return state.cues.findIndex(c => c.id === id);
+    }
+
+    function getSelectedCue() {
+      const idx = getCueIndexById(state.selectedCueId);
+      return idx >= 0 ? state.cues[idx] : null;
+    }
+
+    function getPlayingCue() {
+      const idx = getCueIndexById(state.playingCueId);
+      return idx >= 0 ? state.cues[idx] : null;
+    }
+
+    function getPlayingCuePosition() {
+      const cue = getPlayingCue();
+      if (!cue) return 0;
+      if (!state.isPlaying || !audioCtx) return state.playingOffsetSec;
+      const elapsed = audioCtx.currentTime - state.playStartCtxTime;
+      return Math.min(cue.duration, Math.max(0, state.playingOffsetSec + elapsed));
+    }
+
+    function getSelectedCueDisplayPosition() {
+      const sel = getSelectedCue();
+      if (!sel) return 0;
+      if (state.playingCueId === sel.id) {
+        return getPlayingCuePosition();
+      }
+      return sel.standbyOffsetSec || 0;
+    }
+
+    function stopSourceNode() {
+      if (sourceNode) {
+        sourceNode.onended = null;
+        try { sourceNode.stop(); } catch (e) {}
+        try { sourceNode.disconnect(); } catch (e) {}
+        sourceNode = null;
+      }
+      if (state.rafId) {
+        cancelAnimationFrame(state.rafId);
+        state.rafId = null;
+      }
+    }
+
+    function startPlaybackCue(cue, fromOffsetSec) {
+      if (!cue || !cue.buffer) return;
+
+      ensureAudioContext();
+      stopSourceNode();
+
+      state.playingCueId = cue.id;
+      const safeOffset = Math.max(0, Math.min(cue.duration - 0.01, fromOffsetSec ?? 0));
+      state.playingOffsetSec = safeOffset;
+      cue.standbyOffsetSec = 0;
+      state.playStartCtxTime = audioCtx.currentTime;
+      state.isPlaying = true;
+
+      applyCueDspToLiveGraph(cue);
+
+      const src = audioCtx.createBufferSource();
+      src.buffer = cue.buffer;
+      src.detune.value = cue.transpose * 100;
+      src.connect(eqFilterNodes[0]);
+
+      const expectedCueId = cue.id;
+      src.onended = () => {
+        if (sourceNode !== src) return;
+        handleCueEnded(expectedCueId);
+      };
+
+      sourceNode = src;
+      src.start(0, safeOffset);
+
+      renderCueList();
+      updateTransportUI();
+      startTickLoop();
+    }
+
+    function pausePlayback() {
+      if (!state.isPlaying) return;
+      state.playingOffsetSec = getPlayingCuePosition();
+      state.isPlaying = false;
+      stopSourceNode();
+      renderCueList();
+      updateTransportUI();
+      updateVisualsFrame();
+    }
+
+    function stopPlayback() {
+      state.isPlaying = false;
+      state.playingOffsetSec = 0;
+      state.playingCueId = null;
+      stopSourceNode();
+      renderCueList();
+      updateTransportUI();
+      updateVisualsFrame();
+    }
+
+    function handleCueEnded(endedCueId) {
+      const idx = getCueIndexById(endedCueId);
+      if (idx < 0) {
+        stopPlayback();
+        return;
+      }
+      const cue = state.cues[idx];
+      sourceNode = null;
+
+      if (cue.endAction === 'loop') {
+        startPlaybackCue(cue, 0);
+      } else if (cue.endAction === 'next') {
+        if (idx + 1 < state.cues.length) {
+          const nextCue = state.cues[idx + 1];
+          if (state.selectedCueId === endedCueId) {
+            state.selectedCueId = nextCue.id;
+          }
+          startPlaybackCue(nextCue, 0);
+          showToast(`다음 곡 자동 실행: ${String(idx + 2).padStart(2, '0')}. ${nextCue.name}`);
+        } else {
+          stopPlayback();
+          showToast('마지막 곡이 끝나 정지했습니다.');
+        }
+      } else {
+        stopPlayback();
+      }
+    }
+
+    function selectCueOnly(cueId) {
+      const target = state.cues.find(c => c.id === cueId);
+      if (!target) return;
+      state.selectedCueId = cueId;
+      renderAll();
+    }
+
+    function moveCueSelection(delta) {
+      if (state.cues.length === 0) return;
+      const currentIdx = getCueIndexById(state.selectedCueId);
+      let nextIdx = currentIdx + delta;
+      if (nextIdx < 0) nextIdx = 0;
+      if (nextIdx >= state.cues.length) nextIdx = state.cues.length - 1;
+      if (nextIdx === currentIdx && state.selectedCueId) return;
+
+      selectCueOnly(state.cues[nextIdx].id);
+    }
+
+    function startTickLoop() {
+      if (state.rafId) cancelAnimationFrame(state.rafId);
+      const tick = () => {
+        updateVisualsFrame();
+        if (state.isPlaying) {
+          state.rafId = requestAnimationFrame(tick);
+        }
+      };
+      state.rafId = requestAnimationFrame(tick);
+    }
+
+    // =========================================================
+    // File Upload & Cue Mutations
+    // =========================================================
+    async function handleFiles(fileList) {
+      const files = Array.from(fileList).filter(f => f.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|aac|flac|webm)$/i.test(f.name));
+      if (files.length === 0) {
+        showToast('지원되는 오디오 파일(MP3, WAV, M4A 등)을 선택해주세요.');
+        return;
+      }
+
+      ensureAudioContext();
+      showToast(`${files.length}개 음원 분석 중...`);
+
+      let firstAddedId = null;
+
+      for (const file of files) {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+          const id = 'cue-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+          const cue = createCueObject({
+            id,
+            name: file.name,
+            buffer: audioBuffer,
+            endAction: 'stop',
+            isDemo: false
+          });
+          state.cues.push(cue);
+          if (!firstAddedId) firstAddedId = id;
+        } catch (err) {
+          console.error(err);
+          showToast(`"${file.name}" 디코딩에 실패했습니다.`);
+        }
+      }
+
+      if (firstAddedId && !state.selectedCueId) {
+        state.selectedCueId = firstAddedId;
+      }
+
+      renderAll();
+      showToast(`${files.length}개 곡이 타임라인에 추가되었습니다.`);
+    }
+
+    function cycleCueEndAction(cueId) {
+      const cue = state.cues.find(c => c.id === cueId);
+      if (!cue) return;
+      const order = ['stop', 'next', 'loop'];
+      cue.endAction = order[(order.indexOf(cue.endAction) + 1) % order.length];
+      renderAll();
+    }
+
+    function setSelectedCueEndAction(action) {
+      const cue = getSelectedCue();
+      if (!cue) return;
+      cue.endAction = action;
+      renderAll();
+    }
+
+    function moveCueOrder(cueId, direction) {
+      const idx = getCueIndexById(cueId);
+      if (idx < 0) return;
+      const targetIdx = idx + direction;
+      if (targetIdx < 0 || targetIdx >= state.cues.length) return;
+      const [item] = state.cues.splice(idx, 1);
+      state.cues.splice(targetIdx, 0, item);
+      renderAll();
+    }
+
+    function deleteCue(cueId) {
+      const idx = getCueIndexById(cueId);
+      if (idx < 0) return;
+
+      if (state.playingCueId === cueId) {
+        stopPlayback();
+      }
+
+      const wasSelected = state.selectedCueId === cueId;
+      state.cues.splice(idx, 1);
+
+      if (wasSelected) {
+        if (state.cues.length > 0) {
+          const nextIdx = Math.min(idx, state.cues.length - 1);
+          state.selectedCueId = state.cues[nextIdx].id;
+        } else {
+          state.selectedCueId = null;
+        }
+      }
+      renderAll();
+    }
+
+    // =========================================================
+    // Waveform & Parametric EQ + RTA Renderers
+    // =========================================================
+    function drawWaveformOnCanvas(canvas, cue, posSec, isCuePlaying, compact = false) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const targetW = Math.floor(rect.width * dpr);
+      const targetH = Math.floor(rect.height * dpr);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const width = rect.width;
+      const height = rect.height;
+      ctx.clearRect(0, 0, width, height);
+
+      if (!compact) {
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, height / 2);
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
+      }
+
+      if (!cue || !cue.peaks) return;
+
+      const peaks = cue.peaks;
+      const totalBars = compact ? Math.min(90, peaks.length) : peaks.length;
+      const step = compact ? Math.max(1, Math.floor(peaks.length / totalBars)) : 1;
+      const progress = cue.duration > 0 ? Math.min(1, Math.max(0, posSec / cue.duration)) : 0;
+
+      const barGap = compact ? 1 : 1.5;
+      const barWidth = Math.max(1, (width - (totalBars - 1) * barGap) / totalBars);
+      const maxBarHeight = height * (compact ? 0.88 : 0.82);
+      const centerY = height / 2;
+
+      for (let i = 0; i < totalBars; i++) {
+        const peakVal = peaks[Math.min(peaks.length - 1, i * step)];
+        const x = i * (barWidth + barGap);
+        const barRatio = i / totalBars;
+        const h = Math.max(2, peakVal * maxBarHeight);
+        const y = centerY - h / 2;
+
+        if (barRatio <= progress) {
+          ctx.fillStyle = isCuePlaying ? '#22d3ee' : '#10b981';
+        } else {
+          ctx.fillStyle = compact ? '#3b4a63' : '#334155';
+        }
+
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(x, y, barWidth, h, compact ? 1 : 1.5);
+        } else {
+          ctx.rect(x, y, barWidth, h);
+        }
+        ctx.fill();
+      }
+
+      const playheadX = progress * width;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = compact ? 1.5 : 2;
+      ctx.beginPath();
+      ctx.moveTo(playheadX, compact ? 1 : 4);
+      ctx.lineTo(playheadX, height - (compact ? 1 : 4));
+      ctx.stroke();
+
+      if (!compact) {
+        ctx.fillStyle = '#22d3ee';
+        ctx.beginPath();
+        ctx.arc(playheadX, 7, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Log frequency mapping helpers (20Hz - 20kHz)
+    function freqToX(freq, width) {
+      const minLog = Math.log10(20);
+      const maxLog = Math.log10(20000);
+      return ((Math.log10(Math.max(20, Math.min(20000, freq))) - minLog) / (maxLog - minLog)) * width;
+    }
+
+    function xToFreq(x, width) {
+      const minLog = Math.log10(20);
+      const maxLog = Math.log10(20000);
+      const ratio = Math.max(0, Math.min(1, x / width));
+      return Math.pow(10, minLog + ratio * (maxLog - minLog));
+    }
+
+    function dbToY(db, height) {
+      const clamped = Math.max(-18, Math.min(18, db));
+      return ((18 - clamped) / 36) * height;
+    }
+
+    function yToDb(y, height) {
+      const ratio = Math.max(0, Math.min(1, y / height));
+      return 18 - ratio * 36;
+    }
+
+    // Exact RBJ Biquad magnitude in dB at frequency f
+    function biquadMagDb(band, f, fs = 48000) {
+      if (!band.enabled) return 0;
+      const w0 = (2 * Math.PI * f) / fs;
+      const freq0 = Math.max(10, Math.min(fs * 0.45, band.freq));
+      const w0c = (2 * Math.PI * freq0) / fs;
+      const cosW0 = Math.cos(w0c);
+      const sinW0 = Math.sin(w0c);
+      const Q = Math.max(0.1, band.q);
+      const alpha = sinW0 / (2 * Q);
+      const A = Math.pow(10, (band.gain || 0) / 40);
+
+      let b0 = 1, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;
+
+      if (band.type === 'highpass') {
+        b0 = (1 + cosW0) / 2;
+        b1 = -(1 + cosW0);
+        b2 = (1 + cosW0) / 2;
+        a0 = 1 + alpha;
+        a1 = -2 * cosW0;
+        a2 = 1 - alpha;
+      } else if (band.type === 'lowpass') {
+        b0 = (1 - cosW0) / 2;
+        b1 = 1 - cosW0;
+        b2 = (1 - cosW0) / 2;
+        a0 = 1 + alpha;
+        a1 = -2 * cosW0;
+        a2 = 1 - alpha;
+      } else if (band.type === 'lowshelf') {
+        const sqA = Math.sqrt(A);
+        const alphaS = sinW0 / 2 * Math.sqrt((A + 1 / A) * (1 / Math.max(0.2, Q) - 1) + 2);
+        const twoSqAAlpha = 2 * sqA * (isNaN(alphaS) ? alpha : alphaS);
+        b0 = A * ((A + 1) - (A - 1) * cosW0 + twoSqAAlpha);
+        b1 = 2 * A * ((A - 1) - (A + 1) * cosW0);
+        b2 = A * ((A + 1) - (A - 1) * cosW0 - twoSqAAlpha);
+        a0 = (A + 1) + (A - 1) * cosW0 + twoSqAAlpha;
+        a1 = -2 * ((A - 1) + (A + 1) * cosW0);
+        a2 = (A + 1) + (A - 1) * cosW0 - twoSqAAlpha;
+      } else {
+        // peaking
+        b0 = 1 + alpha * A;
+        b1 = -2 * cosW0;
+        b2 = 1 - alpha * A;
+        a0 = 1 + alpha / A;
+        a1 = -2 * cosW0;
+        a2 = 1 - alpha / A;
+      }
+
+      const cos1 = Math.cos(w0);
+      const sin1 = Math.sin(w0);
+      const cos2 = Math.cos(2 * w0);
+      const sin2 = Math.sin(2 * w0);
+
+      const numRe = b0 + b1 * cos1 + b2 * cos2;
+      const numIm = -b1 * sin1 - b2 * sin2;
+      const denRe = a0 + a1 * cos1 + a2 * cos2;
+      const denIm = -a1 * sin1 - a2 * sin2;
+
+      const magSq = (numRe * numRe + numIm * numIm) / Math.max(1e-12, denRe * denRe + denIm * denIm);
+      return 10 * Math.log10(Math.max(1e-9, magSq));
+    }
+
+    function drawEqAndRtaCanvas(canvas, cue, isLarge = false) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const targetW = Math.floor(rect.width * dpr);
+      const targetH = Math.floor(rect.height * dpr);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const width = rect.width;
+      const height = rect.height;
+      ctx.clearRect(0, 0, width, height);
+
+      // Grid: frequencies
+      const gridFreqs = [30, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+      ctx.lineWidth = 1;
+      ctx.font = `${isLarge ? 10 : 9}px "JetBrains Mono", monospace`;
+      ctx.textAlign = 'center';
+
+      gridFreqs.forEach(f => {
+        const x = freqToX(f, width);
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.1)';
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+
+        if (isLarge || [100, 1000, 10000].includes(f)) {
+          ctx.fillStyle = 'rgba(148, 163, 184, 0.55)';
+          const lbl = f >= 1000 ? (f / 1000) + 'k' : String(f);
+          ctx.fillText(lbl, x, height - 4);
+        }
+      });
+
+      // Grid: dB lines
+      [-12, -6, 0, 6, 12].forEach(db => {
+        const y = dbToY(db, height);
+        ctx.strokeStyle = db === 0 ? 'rgba(148, 163, 184, 0.3)' : 'rgba(148, 163, 184, 0.08)';
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+        if (isLarge && db !== 0) {
+          ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+          ctx.textAlign = 'left';
+          ctx.fillText((db > 0 ? '+' : '') + db, 4, y - 3);
+        }
+      });
+
+      // Live RTA Spectrum behind curve
+      if (analyserNode && rtaBins && state.isPlaying && audioCtx) {
+        analyserNode.getByteFrequencyData(rtaBins);
+        const nyquist = audioCtx.sampleRate / 2;
+        const binCount = rtaBins.length;
+
+        ctx.beginPath();
+        ctx.moveTo(0, height);
+        const steps = Math.min(140, Math.floor(width / 3));
+        for (let i = 0; i <= steps; i++) {
+          const x = (i / steps) * width;
+          const f = xToFreq(x, width);
+          const binIdx = Math.min(binCount - 1, Math.max(0, Math.round((f / nyquist) * binCount)));
+          const amp = rtaBins[binIdx] / 255;
+          const y = height - amp * height * 0.92;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(width, height);
+        ctx.closePath();
+
+        const rtaGrad = ctx.createLinearGradient(0, 0, 0, height);
+        rtaGrad.addColorStop(0, 'rgba(34, 211, 238, 0.35)');
+        rtaGrad.addColorStop(1, 'rgba(16, 185, 129, 0.04)');
+        ctx.fillStyle = rtaGrad;
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      if (!cue) return;
+
+      const fs = audioCtx ? audioCtx.sampleRate : 48000;
+      const curveSamples = Math.max(100, Math.floor(width / 2));
+
+      // Combined EQ Frequency Response Curve
+      ctx.beginPath();
+      for (let i = 0; i <= curveSamples; i++) {
+        const x = (i / curveSamples) * width;
+        const f = xToFreq(x, width);
+        let totalDb = 0;
+        for (let b = 0; b < cue.eq.length; b++) {
+          totalDb += biquadMagDb(cue.eq[b], f, fs);
+        }
+        const y = dbToY(totalDb, height);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+
+      // Fill under/over 0dB line
+      ctx.save();
+      ctx.lineTo(width, dbToY(0, height));
+      ctx.lineTo(0, dbToY(0, height));
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.12)';
+      ctx.fill();
+      ctx.restore();
+
+      ctx.strokeStyle = '#34d399';
+      ctx.lineWidth = isLarge ? 2.5 : 2;
+      ctx.stroke();
+
+      // Band Control Nodes
+      cue.eq.forEach((band, idx) => {
+        const x = freqToX(band.freq, width);
+        const y = (band.type === 'highpass' || band.type === 'lowpass')
+          ? dbToY(0, height)
+          : dbToY(band.gain, height);
+        const isSel = idx === state.selectedEqBandIdx;
+        const radius = isLarge ? (isSel ? 8 : 6) : (isSel ? 6.5 : 4.5);
+
+        ctx.save();
+        ctx.globalAlpha = band.enabled ? 1 : 0.4;
+        ctx.fillStyle = band.color;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (isSel) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+
+        if (isLarge) {
+          ctx.fillStyle = '#e2e8f0';
+          ctx.font = 'bold 10px "Inter", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(band.label, x, Math.max(12, y - 12));
+        }
+        ctx.restore();
+      });
+    }
+
+    function updateVisualsFrame() {
+      const selCue = getSelectedCue();
+      const playingCue = getPlayingCue();
+      const playingPos = getPlayingCuePosition();
+
+      // Main inspector readout
+      if (selCue) {
+        const isSelPlaying = state.playingCueId === selCue.id && state.isPlaying;
+        const selPos = getSelectedCueDisplayPosition();
+        const dur = selCue.duration;
+        const rem = Math.max(0, dur - selPos);
+
+        currentTimeText.textContent = formatTime(selPos);
+        totalTimeText.textContent = formatTime(dur);
+        remainingTimeText.textContent = '-' + formatTime(rem);
+
+        waveformEmptyOverlay.classList.add('hidden');
+        if (state.activeTab === 'waveform') {
+          drawWaveformOnCanvas(waveformCanvas, selCue, selPos, isSelPlaying, false);
+        } else if (state.activeTab === 'eq') {
+          drawEqAndRtaCanvas(eqInlineCanvas, selCue, false);
+        }
+      } else {
+        currentTimeText.textContent = '00:00.0';
+        totalTimeText.textContent = '00:00.0';
+        remainingTimeText.textContent = '-00:00.0';
+        waveformEmptyOverlay.classList.remove('hidden');
+        drawWaveformOnCanvas(waveformCanvas, null, 0, false, false);
+      }
+
+      // Fullscreen EQ Drawer visuals & now-playing mini bar
+      if (state.eqDrawerOpen) {
+        drawEqAndRtaCanvas(eqFullCanvas, selCue, true);
+        if (playingCue) {
+          const pRem = Math.max(0, playingCue.duration - playingPos);
+          const pct = playingCue.duration > 0 ? Math.min(100, (playingPos / playingCue.duration) * 100) : 0;
+          eqDrawerPlayingName.textContent = playingCue.name;
+          eqDrawerRemainingText.textContent = '-' + formatTime(pRem);
+          eqDrawerProgressBar.style.width = pct.toFixed(2) + '%';
+        } else {
+          eqDrawerPlayingName.textContent = selCue ? `${selCue.name} (대기 중)` : '재생 중인 곡 없음';
+          eqDrawerRemainingText.textContent = selCue ? '-' + formatTime(selCue.duration) : '-00:00.0';
+          eqDrawerProgressBar.style.width = '0%';
+        }
+      }
+
+      // Bottom mini progress bar
+      if (playingCue && playingCue.duration > 0) {
+        const pct = Math.min(100, (playingPos / playingCue.duration) * 100);
+        miniProgressBar.style.width = pct.toFixed(2) + '%';
+      } else {
+        miniProgressBar.style.width = '0%';
+      }
+
+      // Background running banner
+      if (playingCue && (state.isPlaying || state.playingOffsetSec > 0) && state.selectedCueId !== playingCue.id) {
+        const pIdx = getCueIndexById(playingCue.id);
+        bgRunningBanner.classList.remove('hidden');
+        bgRunningText.textContent = `CUE ${String(pIdx + 1).padStart(2, '0')} ${state.isPlaying ? '재생 중' : '일시정지'} (${formatTime(playingPos)} / ${formatTime(playingCue.duration)}) — ${playingCue.name}`;
+      } else {
+        bgRunningBanner.classList.add('hidden');
+      }
+
+      // Inline mini waveform inside the playing cue row
+      if (playingCue) {
+        const miniCanvas = cueListContainer.querySelector(`canvas.mini-cue-waveform[data-cue-id="${playingCue.id}"]`);
+        if (miniCanvas) {
+          drawWaveformOnCanvas(miniCanvas, playingCue, playingPos, state.isPlaying, true);
+        }
+        const miniTimeEl = cueListContainer.querySelector(`span.mini-cue-time[data-cue-id="${playingCue.id}"]`);
+        if (miniTimeEl) {
+          miniTimeEl.textContent = formatTime(playingPos);
+        }
+      }
+    }
+
+    // =========================================================
+    // Inspector Tabs, EQ Controls & UI Sync
+    // =========================================================
+    function setActiveTab(tabName) {
+      state.activeTab = tabName;
+      document.querySelectorAll('.inspector-tab-btn').forEach(btn => {
+        const isActive = btn.dataset.tab === tabName;
+        if (isActive) {
+          btn.className = 'inspector-tab-btn btn-press flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-colors bg-cyan-500/20 text-cyan-300 border border-cyan-500/40';
+        } else {
+          btn.className = 'inspector-tab-btn btn-press flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-colors text-slate-400 hover:text-slate-200 border border-transparent';
+        }
+      });
+
+      document.getElementById('tabPanelWaveform').classList.toggle('hidden', tabName !== 'waveform');
+      document.getElementById('tabPanelTranspose').classList.toggle('hidden', tabName !== 'transpose');
+      document.getElementById('tabPanelEq').classList.toggle('hidden', tabName !== 'eq');
+      document.getElementById('tabPanelGain').classList.toggle('hidden', tabName !== 'gain');
+
+      updateVisualsFrame();
+    }
+
+    function sliderPosToFreq(pos) {
+      return Math.round(20 * Math.pow(1000, pos / 1000));
+    }
+
+    function freqToSliderPos(freq) {
+      return Math.round((Math.log10(Math.max(20, Math.min(20000, freq)) / 20) / 3) * 1000);
+    }
+
+    function syncEqControlsUI() {
+      const cue = getSelectedCue();
+      if (!cue) return;
+
+      const renderPills = (container, compact) => {
+        container.innerHTML = cue.eq.map((b, idx) => {
+          const isSel = idx === state.selectedEqBandIdx;
+          const activeStyle = isSel
+            ? 'border-white/70 bg-slate-800 text-white'
+            : 'border-slate-800 bg-[#090d16] text-slate-400 hover:text-slate-200';
+          return `
+            <button type="button" data-band-idx="${idx}" class="eq-band-pill btn-press flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 text-[10px]' : 'py-1.5 px-2 text-xs'} rounded-lg border font-bold ${activeStyle} ${b.enabled ? '' : 'opacity-45'}">
+              <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${b.color}"></span>
+              <span class="truncate">${b.label}</span>
+            </button>
+          `;
+        }).join('');
+      };
+
+      renderPills(eqInlineBandPills, true);
+      renderPills(eqFullBandPills, false);
+
+      const band = cue.eq[state.selectedEqBandIdx];
+      if (!band) return;
+
+      const isFilterPass = band.type === 'highpass' || band.type === 'lowpass';
+
+      // Inline mini sliders
+      eqInlineFreqSlider.value = freqToSliderPos(band.freq);
+      eqInlineFreqVal.textContent = formatFreq(band.freq);
+      eqInlineGainSlider.disabled = isFilterPass;
+      eqInlineGainSlider.value = band.gain;
+      eqInlineGainVal.textContent = isFilterPass ? 'N/A' : `${band.gain > 0 ? '+' : ''}${band.gain.toFixed(1)}dB`;
+      eqInlineQSlider.value = band.q;
+      eqInlineQVal.textContent = band.q.toFixed(1);
+
+      // Fullscreen drawer sliders
+      eqFullSelectedDot.style.background = band.color;
+      eqFullSelectedTitle.textContent = `${band.label} (${band.type.toUpperCase()})`;
+      eqFullBandToggleBtn.textContent = band.enabled ? 'ON' : 'BYPASS';
+      eqFullBandToggleBtn.className = band.enabled
+        ? 'btn-press px-2.5 py-1 rounded-md text-[11px] font-bold border bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+        : 'btn-press px-2.5 py-1 rounded-md text-[11px] font-bold border bg-slate-800 text-slate-400 border-slate-700';
+
+      eqFullFreqSlider.value = freqToSliderPos(band.freq);
+      eqFullFreqVal.textContent = formatFreq(band.freq);
+      eqFullGainBox.classList.toggle('opacity-40', isFilterPass);
+      eqFullGainSlider.disabled = isFilterPass;
+      eqFullGainSlider.value = band.gain;
+      eqFullGainVal.textContent = isFilterPass ? '필터 모드' : `${band.gain > 0 ? '+' : ''}${band.gain.toFixed(1)} dB`;
+      eqFullQSlider.value = band.q;
+      eqFullQVal.textContent = band.q.toFixed(2);
+    }
+
+    function syncInspectorControls() {
+      const cue = getSelectedCue();
+      if (!cue) return;
+
+      // Transpose
+      transposeSlider.value = cue.transpose;
+      const tSign = cue.transpose > 0 ? '+' : '';
+      transposeValueBadge.textContent = cue.transpose === 0 ? '0 키' : `${tSign}${cue.transpose} 반음`;
+
+      // Per-cue Gain (dB primary, compact non-wrapping)
+      cueGainSlider.value = cue.gainDb;
+      const dbStr = (cue.gainDb > 0 ? '+' : '') + cue.gainDb.toFixed(1) + ' dB';
+      const pctVal = Math.round(Math.pow(10, cue.gainDb / 20) * 100);
+      cueGainDbText.textContent = dbStr;
+      cueGainPctText.textContent = `(${pctVal}%)`;
+
+      // Waveform hint
+      if (state.isPlaying && state.playingCueId !== cue.id) {
+        waveformHintText.innerHTML = `<i data-lucide="mouse-pointer-click" class="w-3 h-3 text-cyan-400"></i> 클릭 시 시작 위치만 미리 지정 (현재 재생 곡은 유지)`;
+      } else {
+        waveformHintText.innerHTML = `<i data-lucide="mouse-pointer-click" class="w-3 h-3 text-cyan-400"></i> 파형의 원하는 위치를 터치/클릭하면 즉시 해당 구간부터 재생됩니다`;
+      }
+
+      syncEqControlsUI();
+    }
+
+    function updateTransportUI() {
+      const selCue = getSelectedCue();
+      const selIdx = getCueIndexById(state.selectedCueId);
+
+      if (selCue) {
+        activeCueNumberBadge.textContent = `CUE ${String(selIdx + 1).padStart(2, '0')}`;
+        eqDrawerCueTag.textContent = `CUE ${String(selIdx + 1).padStart(2, '0')}`;
+        activeTrackName.textContent = selCue.name;
+      } else {
+        activeCueNumberBadge.textContent = 'CUE --';
+        eqDrawerCueTag.textContent = 'CUE --';
+        activeTrackName.textContent = '음원을 추가해주세요';
+      }
+
+      const isSelectedPlaying = selCue && state.playingCueId === selCue.id && state.isPlaying;
+      const isSelectedPaused = selCue && state.playingCueId === selCue.id && !state.isPlaying && state.playingOffsetSec > 0;
+
+      if (isSelectedPlaying) {
+        playStatusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> 재생 중`;
+        playStatusBadge.className = 'inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+
+        playPauseBtn.className = 'btn-press col-span-2 flex items-center justify-center gap-2.5 py-2.5 sm:py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold shadow-lg shadow-amber-400/20';
+        playPauseIcon.setAttribute('data-lucide', 'pause');
+        playPauseLabel.textContent = '일시정지';
+        playPauseSub.textContent = '현재 곡 일시정지';
+      } else if (selCue && state.isPlaying && state.playingCueId !== selCue.id) {
+        playStatusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span> 선택됨 (대기)`;
+        playStatusBadge.className = 'inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30';
+
+        playPauseBtn.className = 'btn-press col-span-2 flex items-center justify-center gap-2.5 py-2.5 sm:py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/25';
+        playPauseIcon.setAttribute('data-lucide', 'play');
+        playPauseLabel.textContent = `GO · CUE ${String(selIdx + 1).padStart(2, '0')} 실행`;
+        playPauseSub.textContent = '누르면 선택 곡으로 전환';
+      } else {
+        playStatusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> ${isSelectedPaused ? '일시정지' : '대기 중'}`;
+        playStatusBadge.className = 'inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300';
+
+        playPauseBtn.className = 'btn-press col-span-2 flex items-center justify-center gap-2.5 py-2.5 sm:py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/25';
+        playPauseIcon.setAttribute('data-lucide', 'play');
+        playPauseLabel.textContent = isSelectedPaused ? 'GO · 이어서 재생' : 'GO · 재생';
+        playPauseSub.textContent = selCue ? '터치하여 실행' : '음원을 추가하세요';
+      }
+
+      // Sync Drawer Play/Pause icon
+      eqDrawerPlayIcon.setAttribute('data-lucide', state.isPlaying ? 'pause' : 'play');
+
+      const currentAction = selCue ? selCue.endAction : null;
+      document.querySelectorAll('.end-action-btn').forEach(btn => {
+        const act = btn.dataset.action;
+        const isActive = act === currentAction;
+        if (isActive) {
+          if (act === 'stop') {
+            btn.className = 'end-action-btn btn-press flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border bg-slate-700 text-white border-slate-500';
+          } else if (act === 'next') {
+            btn.className = 'end-action-btn btn-press flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border bg-amber-500/20 text-amber-300 border-amber-500/60';
+          } else {
+            btn.className = 'end-action-btn btn-press flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border bg-violet-500/20 text-violet-300 border-violet-500/60';
+          }
+        } else {
+          btn.className = 'end-action-btn btn-press flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border bg-[#0c121e] text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200';
+        }
+      });
+
+      prevCueBtn.disabled = selIdx <= 0;
+      prevCueBtn.classList.toggle('opacity-40', selIdx <= 0);
+      nextCueBtn.disabled = selIdx < 0 || selIdx >= state.cues.length - 1;
+      nextCueBtn.classList.toggle('opacity-40', selIdx < 0 || selIdx >= state.cues.length - 1);
+
+      syncInspectorControls();
+      lucide.createIcons();
+    }
+
+    function renderCueList() {
+      cueCountBadge.textContent = `${state.cues.length}곡`;
+
+      if (state.cues.length === 0) {
+        cueListContainer.innerHTML = `
+          <div class="py-10 px-4 flex flex-col items-center justify-center text-center gap-2.5">
+            <div class="w-10 h-10 rounded-full bg-slate-800/80 border border-slate-700 flex items-center justify-center text-cyan-400">
+              <i data-lucide="music-2" class="w-5 h-5"></i>
+            </div>
+            <div class="text-xs sm:text-sm text-slate-300 font-medium">
+              등록된 음원이 없습니다
+            </div>
+            <p class="text-[11px] text-slate-500 max-w-xs">
+              상단 <span class="text-cyan-400 font-semibold">+ 음원 추가</span> 버튼을 누르거나 오디오 파일을 끌어다 놓아 첫 번째 큐를 만들어보세요.
+            </p>
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      cueListContainer.innerHTML = state.cues.map((cue, index) => {
+        const isSelected = cue.id === state.selectedCueId;
+        const isRunning = cue.id === state.playingCueId && (state.isPlaying || state.playingOffsetSec > 0);
+        const isActivelyPlaying = cue.id === state.playingCueId && state.isPlaying;
+        const numStr = String(index + 1).padStart(2, '0');
+        const meta = END_ACTION_META[cue.endAction];
+
+        const rowBg = isSelected
+          ? 'bg-cyan-500/10 border-l-4 border-l-cyan-400'
+          : (isRunning ? 'bg-emerald-500/5 border-l-4 border-l-emerald-400' : 'hover:bg-slate-800/50 border-l-4 border-l-transparent');
+
+        return `
+          <div data-cue-id="${cue.id}" class="cue-row group grid grid-cols-[44px_1fr_auto_auto] sm:grid-cols-[56px_1fr_110px_84px_72px] items-center gap-2 px-3 sm:px-4 py-2.5 cursor-pointer transition-colors ${rowBg}">
+            <div class="flex items-center gap-1">
+              <span class="font-mono-num text-xs sm:text-sm font-bold ${isActivelyPlaying ? 'text-emerald-400' : (isSelected ? 'text-cyan-300' : 'text-slate-400')}">
+                ${numStr}
+              </span>
+              ${isActivelyPlaying ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>' : ''}
+            </div>
+
+            <div class="min-w-0">
+              ${isRunning ? `
+                <div class="flex items-center justify-between gap-2 mb-1">
+                  <span class="text-[11px] font-semibold truncate text-emerald-300">
+                    ${escapeHtml(cue.name)}
+                  </span>
+                  <span class="mini-cue-time font-mono-num text-[10px] font-bold text-cyan-300 shrink-0" data-cue-id="${cue.id}">
+                    ${formatTime(getPlayingCuePosition())}
+                  </span>
+                </div>
+                <div class="w-full h-6 rounded bg-[#090d16] border border-emerald-500/30 overflow-hidden px-1 py-0.5">
+                  <canvas class="mini-cue-waveform w-full h-full block" data-cue-id="${cue.id}"></canvas>
+                </div>
+              ` : `
+                <div class="text-xs sm:text-sm font-semibold truncate ${isSelected ? 'text-white' : 'text-slate-200'}">
+                  ${escapeHtml(cue.name)}
+                </div>
+              `}
+
+              <div class="flex items-center gap-1.5 mt-1 sm:hidden">
+                <button type="button" data-action="cycle-end" data-cue-id="${cue.id}" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${meta.badgeClass}">
+                  <i data-lucide="${meta.icon}" class="w-2.5 h-2.5"></i>
+                  <span>${meta.short}</span>
+                </button>
+                ${cue.transpose !== 0 ? `<span class="text-[10px] font-mono-num px-1 rounded bg-cyan-500/15 text-cyan-300">${cue.transpose > 0 ? '+' : ''}${cue.transpose}키</span>` : ''}
+              </div>
+            </div>
+
+            <div class="hidden sm:flex justify-center">
+              <button type="button" data-action="cycle-end" data-cue-id="${cue.id}" title="클릭하여 종료 후 동작 변경" class="btn-press inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] font-semibold ${meta.badgeClass}">
+                <i data-lucide="${meta.icon}" class="w-3 h-3"></i>
+                <span>${meta.short}</span>
+              </button>
+            </div>
+
+            <div class="font-mono-num text-xs sm:text-sm text-right ${isActivelyPlaying ? 'text-emerald-300 font-semibold' : (isSelected ? 'text-cyan-300 font-semibold' : 'text-slate-400')}">
+              ${formatTime(cue.duration)}
+            </div>
+
+            <div class="flex items-center justify-end gap-0.5">
+              <button type="button" data-action="move-up" data-cue-id="${cue.id}" title="위로" class="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-white ${index === 0 ? 'opacity-25 pointer-events-none' : ''}">
+                <i data-lucide="arrow-up" class="w-3.5 h-3.5"></i>
+              </button>
+              <button type="button" data-action="move-down" data-cue-id="${cue.id}" title="아래로" class="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-white ${index === state.cues.length - 1 ? 'opacity-25 pointer-events-none' : ''}">
+                <i data-lucide="arrow-down" class="w-3.5 h-3.5"></i>
+              </button>
+              <button type="button" data-action="delete" data-cue-id="${cue.id}" title="삭제" class="p-1.5 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function renderAll() {
+      renderCueList();
+      updateTransportUI();
+      updateVisualsFrame();
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[m]);
+    }
+
+    // =========================================================
+    // Slide-Over EQ Drawer Open / Close
+    // =========================================================
+    function openEqDrawer() {
+      state.eqDrawerOpen = true;
+      eqDrawerOverlay.classList.remove('pointer-events-none', 'opacity-0');
+      eqDrawerOverlay.classList.add('pointer-events-auto', 'opacity-100');
+      eqDrawerPanel.classList.remove('translate-x-full');
+      eqDrawerPanel.classList.add('translate-x-0');
+      syncEqControlsUI();
+      setTimeout(() => updateVisualsFrame(), 50);
+    }
+
+    function closeEqDrawer() {
+      state.eqDrawerOpen = false;
+      eqDrawerPanel.classList.remove('translate-x-0');
+      eqDrawerPanel.classList.add('translate-x-full');
+      eqDrawerOverlay.classList.remove('pointer-events-auto', 'opacity-100');
+      eqDrawerOverlay.classList.add('pointer-events-none', 'opacity-0');
+      updateVisualsFrame();
+    }
+
+    // =========================================================
+    // Event Listeners
+    // =========================================================
+    audioFileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleFiles(e.target.files);
+        e.target.value = '';
+      }
+    });
+
+    ['dragenter', 'dragover'].forEach(evtName => {
+      document.body.addEventListener(evtName, (e) => {
+        e.preventDefault();
+        dropZoneFooter.classList.add('bg-cyan-500/10', 'text-cyan-300');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(evtName => {
+      document.body.addEventListener(evtName, (e) => {
+        e.preventDefault();
+        dropZoneFooter.classList.remove('bg-cyan-500/10', 'text-cyan-300');
+      });
+    });
+
+    document.body.addEventListener('drop', (e) => {
+      if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+        handleFiles(e.dataTransfer.files);
+      }
+    });
+
+    cueListContainer.addEventListener('click', (e) => {
+      const actionBtn = e.target.closest('button[data-action]');
+      if (actionBtn) {
+        e.stopPropagation();
+        const action = actionBtn.dataset.action;
+        const cueId = actionBtn.dataset.cueId;
+        if (action === 'cycle-end') cycleCueEndAction(cueId);
+        else if (action === 'move-up') moveCueOrder(cueId, -1);
+        else if (action === 'move-down') moveCueOrder(cueId, 1);
+        else if (action === 'delete') deleteCue(cueId);
+        return;
+      }
+
+      const row = e.target.closest('.cue-row');
+      if (row) {
+        selectCueOnly(row.dataset.cueId);
+      }
+    });
+
+    jumpToPlayingBtn.addEventListener('click', () => {
+      if (state.playingCueId) {
+        selectCueOnly(state.playingCueId);
+      }
+    });
+
+    document.getElementById('inspectorTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('.inspector-tab-btn');
+      if (!btn) return;
+      setActiveTab(btn.dataset.tab);
+    });
+
+    document.getElementById('endActionSegmented').addEventListener('click', (e) => {
+      const btn = e.target.closest('.end-action-btn');
+      if (!btn) return;
+      setSelectedCueEndAction(btn.dataset.action);
+    });
+
+    // Waveform click/drag seek
+    function handleWaveformPointer(e) {
+      const cue = getSelectedCue();
+      if (!cue) return;
+      const rect = waveformCanvas.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const targetSec = ratio * cue.duration;
+
+      if (state.isPlaying && state.playingCueId !== cue.id) {
+        cue.standbyOffsetSec = targetSec;
+        updateVisualsFrame();
+      } else {
+        startPlaybackCue(cue, targetSec);
+      }
+    }
+
+    waveformCanvas.addEventListener('pointerdown', (e) => {
+      if (!getSelectedCue()) return;
+      state.isDraggingWave = true;
+      waveformCanvas.setPointerCapture(e.pointerId);
+      handleWaveformPointer(e);
+    });
+
+    waveformCanvas.addEventListener('pointermove', (e) => {
+      const cue = getSelectedCue();
+      if (!cue) return;
+      const rect = waveformCanvas.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      hoverTimeHint.textContent = formatTime(ratio * cue.duration);
+      if (state.isDraggingWave) {
+        handleWaveformPointer(e);
+      }
+    });
+
+    waveformCanvas.addEventListener('pointerup', (e) => {
+      state.isDraggingWave = false;
+      try { waveformCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    waveformCanvas.addEventListener('pointerleave', () => {
+      hoverTimeHint.textContent = '';
+    });
+
+    // Transpose controls
+    function updateTranspose(val) {
+      const cue = getSelectedCue();
+      if (!cue) return;
+      cue.transpose = Math.max(-12, Math.min(12, Math.round(val)));
+      applyCueDspToLiveGraph(cue);
+      syncInspectorControls();
+      renderCueList();
+    }
+
+    transposeSlider.addEventListener('input', (e) => updateTranspose(parseInt(e.target.value, 10)));
+    transposeDownBtn.addEventListener('click', () => {
+      const cue = getSelectedCue();
+      if (cue) updateTranspose(cue.transpose - 1);
+    });
+    transposeUpBtn.addEventListener('click', () => {
+      const cue = getSelectedCue();
+      if (cue) updateTranspose(cue.transpose + 1);
+    });
+    transposeResetBtn.addEventListener('click', () => updateTranspose(0));
+
+    // Per-Cue Gain (dB) controls
+    function updateCueGainDb(dbVal) {
+      const cue = getSelectedCue();
+      if (!cue) return;
+      cue.gainDb = Math.max(-24, Math.min(6, parseFloat(dbVal)));
+      applyCueDspToLiveGraph(cue);
+      syncInspectorControls();
+    }
+
+    cueGainSlider.addEventListener('input', (e) => updateCueGainDb(e.target.value));
+    document.querySelectorAll('.cue-gain-preset').forEach(btn => {
+      btn.addEventListener('click', () => updateCueGainDb(btn.dataset.gainDb));
+    });
+
+    // Parametric EQ Band Selection & Sliders
+    function handleBandPillClick(e) {
+      const btn = e.target.closest('.eq-band-pill');
+      if (!btn) return;
+      state.selectedEqBandIdx = parseInt(btn.dataset.bandIdx, 10);
+      syncEqControlsUI();
+      updateVisualsFrame();
+    }
+    eqInlineBandPills.addEventListener('click', handleBandPillClick);
+    eqFullBandPills.addEventListener('click', handleBandPillClick);
+
+    function mutateSelectedEqBand(updater) {
+      const cue = getSelectedCue();
+      if (!cue) return;
+      const band = cue.eq[state.selectedEqBandIdx];
+      if (!band) return;
+      updater(band);
+      applyCueDspToLiveGraph(cue);
+      syncEqControlsUI();
+      updateVisualsFrame();
+    }
+
+    eqInlineFreqSlider.addEventListener('input', (e) => {
+      mutateSelectedEqBand(b => {
+        b.freq = sliderPosToFreq(parseFloat(e.target.value));
+        if (b.type === 'highpass' || b.type === 'lowpass') b.enabled = true;
+      });
+    });
+    eqFullFreqSlider.addEventListener('input', (e) => {
+      mutateSelectedEqBand(b => {
+        b.freq = sliderPosToFreq(parseFloat(e.target.value));
+        if (b.type === 'highpass' || b.type === 'lowpass') b.enabled = true;
+      });
+    });
+
+    eqInlineGainSlider.addEventListener('input', (e) => {
+      mutateSelectedEqBand(b => {
+        b.gain = parseFloat(e.target.value);
+        b.enabled = true;
+      });
+    });
+    eqFullGainSlider.addEventListener('input', (e) => {
+      mutateSelectedEqBand(b => {
+        b.gain = parseFloat(e.target.value);
+        b.enabled = true;
+      });
+    });
+
+    eqInlineQSlider.addEventListener('input', (e) => {
+      mutateSelectedEqBand(b => { b.q = parseFloat(e.target.value); });
+    });
+    eqFullQSlider.addEventListener('input', (e) => {
+      mutateSelectedEqBand(b => { b.q = parseFloat(e.target.value); });
+    });
+
+    eqFullBandToggleBtn.addEventListener('click', () => {
+      mutateSelectedEqBand(b => { b.enabled = !b.enabled; });
+    });
+
+    function resetSelectedCueEq() {
+      const cue = getSelectedCue();
+      if (!cue) return;
+      cue.eq = DEFAULT_EQ_BANDS();
+      applyCueDspToLiveGraph(cue);
+      syncEqControlsUI();
+      updateVisualsFrame();
+      showToast('EQ가 플랫 상태로 초기화되었습니다.');
+    }
+
+    eqInlineResetBtn.addEventListener('click', resetSelectedCueEq);
+    eqDrawerResetBtn.addEventListener('click', resetSelectedCueEq);
+
+    // Interactive Node Dragging on EQ Canvases
+    function setupEqCanvasInteraction(canvas, canvasType) {
+      canvas.addEventListener('pointerdown', (e) => {
+        const cue = getSelectedCue();
+        if (!cue) return;
+        const rect = canvas.getBoundingClientRect();
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+
+        let nearestIdx = state.selectedEqBandIdx;
+        let minDist = Infinity;
+        cue.eq.forEach((b, idx) => {
+          const bx = freqToX(b.freq, rect.width);
+          const by = (b.type === 'highpass' || b.type === 'lowpass') ? dbToY(0, rect.height) : dbToY(b.gain, rect.height);
+          const dist = Math.hypot(px - bx, py - by);
+          if (dist < minDist) {
+            minDist = dist;
+            nearestIdx = idx;
+          }
+        });
+
+        state.selectedEqBandIdx = nearestIdx;
+        state.draggingEqTarget = { canvasType, bandIdx: nearestIdx };
+        canvas.setPointerCapture(e.pointerId);
+        updateEqNodeFromPointer(canvas, e);
+      });
+
+      canvas.addEventListener('pointermove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+        if (canvasType === 'full') {
+          eqFullHoverInfo.textContent = `${formatFreq(xToFreq(px, rect.width))} · ${yToDb(py, rect.height).toFixed(1)} dB`;
+        }
+        if (state.draggingEqTarget && state.draggingEqTarget.canvasType === canvasType) {
+          updateEqNodeFromPointer(canvas, e);
+        }
+      });
+
+      canvas.addEventListener('pointerup', (e) => {
+        state.draggingEqTarget = null;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      });
+    }
+
+    function updateEqNodeFromPointer(canvas, e) {
+      const cue = getSelectedCue();
+      if (!cue) return;
+      const rect = canvas.getBoundingClientRect();
+      const px = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+      const py = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+      const band = cue.eq[state.selectedEqBandIdx];
+      if (!band) return;
+
+      band.freq = Math.round(xToFreq(px, rect.width));
+      band.enabled = true;
+      if (band.type !== 'highpass' && band.type !== 'lowpass') {
+        band.gain = Math.round(Math.max(-15, Math.min(15, yToDb(py, rect.height))) * 2) / 2;
+      }
+      applyCueDspToLiveGraph(cue);
+      syncEqControlsUI();
+      updateVisualsFrame();
+    }
+
+    setupEqCanvasInteraction(eqInlineCanvas, 'inline');
+    setupEqCanvasInteraction(eqFullCanvas, 'full');
+
+    // EQ Drawer Controls
+    openEqDrawerBtn.addEventListener('click', openEqDrawer);
+    closeEqDrawerBtn.addEventListener('click', closeEqDrawer);
+    eqDrawerBackdrop.addEventListener('click', closeEqDrawer);
+    eqDrawerPlayBtn.addEventListener('click', () => playPauseBtn.click());
+
+    // Transport GO / Play / Pause
+    playPauseBtn.addEventListener('click', () => {
+      const selCue = getSelectedCue();
+      if (!selCue) {
+        showToast('먼저 음원을 추가해주세요.');
+        return;
+      }
+
+      if (state.playingCueId === selCue.id) {
+        if (state.isPlaying) {
+          pausePlayback();
+        } else {
+          startPlaybackCue(selCue, state.playingOffsetSec);
+        }
+      } else {
+        startPlaybackCue(selCue, selCue.standbyOffsetSec || 0);
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      stopPlayback();
+    });
+
+    prevCueBtn.addEventListener('click', () => moveCueSelection(-1));
+    nextCueBtn.addEventListener('click', () => moveCueSelection(1));
+
+    volumeSlider.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      state.masterVolume = val;
+      volumeLabel.textContent = Math.round(val * 100) + '%';
+      if (masterGainNode) {
+        masterGainNode.gain.value = val;
+      }
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        playPauseBtn.click();
+      } else if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') {
+        e.preventDefault();
+        moveCueSelection(-1);
+      } else if (e.code === 'ArrowDown' || e.code === 'ArrowRight') {
+        e.preventDefault();
+        moveCueSelection(1);
+      } else if (e.code === 'Escape') {
+        e.preventDefault();
+        if (state.eqDrawerOpen) closeEqDrawer();
+        else stopPlayback();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      updateVisualsFrame();
+    });
+
+    document.getElementById('clearAllCuesBtn').addEventListener('click', () => {
+      if (state.cues.length === 0) return;
+      stopPlayback();
+      state.cues = [];
+      state.selectedCueId = null;
+      renderAll();
+      showToast('모든 음원 목록을 비웠습니다.');
+    });
+
+    window.addEventListener('load', () => {
+      setActiveTab('waveform');
+      renderAll();
+      lucide.createIcons();
+    });
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.protocol === 'http:')) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
