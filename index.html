@@ -180,6 +180,15 @@
         </div>
       </div>
 
+      <!-- Real-Time Audio Level Meter -->
+      <div class="flex items-center gap-2 mb-2.5 px-2.5 py-1.5 rounded-xl bg-[#090d16] border border-slate-800/80">
+        <span class="text-[10px] font-bold tracking-wider text-slate-400 uppercase shrink-0">LEVEL</span>
+        <div class="relative flex-1 h-2.5 rounded-full bg-slate-900 overflow-hidden border border-slate-800">
+          <canvas id="levelMeterCanvas" class="w-full h-full block"></canvas>
+        </div>
+        <span id="levelDbText" class="font-mono-num text-[10px] font-bold text-slate-400 w-12 text-right shrink-0">-∞ dB</span>
+      </div>
+
       <!-- Cue Settings Category Tabs -->
       <div class="grid grid-cols-4 gap-1 p-1 rounded-xl bg-[#090d16] border border-slate-800/80 mb-3" id="inspectorTabs">
         <button type="button" data-tab="waveform" class="inspector-tab-btn btn-press flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-colors">
@@ -666,6 +675,11 @@
     let currentPitchSemitones = 0;
     let sourceNode = null;
     let rtaBins = null;
+    let timeDomainBuf = null;
+    let meterLevelSmooth = 0;
+    let meterPeakHold = 0;
+    let meterPeakHoldTime = 0;
+    let clearPitchRingFlag = false;
 
     const DEFAULT_EQ_BANDS = () => ([
       { id: 'hpf', type: 'highpass', label: 'HPF',   freq: 20,    gain: 0, q: 0.7, enabled: false, color: '#f43f5e' },
@@ -762,6 +776,8 @@
     const fadeInValText = document.getElementById('fadeInValText');
     const fadeOutValText = document.getElementById('fadeOutValText');
     const fadePreviewCanvas = document.getElementById('fadePreviewCanvas');
+    const levelMeterCanvas = document.getElementById('levelMeterCanvas');
+    const levelDbText = document.getElementById('levelDbText');
 
     // EQ Inline & Drawer
     const eqInlineCanvas = document.getElementById('eqInlineCanvas');
@@ -1028,6 +1044,11 @@
 
       const proc = ctx.createScriptProcessor(2048, 2, 2);
       proc.onaudioprocess = (e) => {
+        if (clearPitchRingFlag) {
+          ringL.fill(0);
+          ringR.fill(0);
+          clearPitchRingFlag = false;
+        }
         const inL = e.inputBuffer.getChannelData(0);
         const inR = e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : inL;
         const outL = e.outputBuffer.getChannelData(0);
@@ -1115,6 +1136,7 @@
         analyserNode.fftSize = 2048;
         analyserNode.smoothingTimeConstant = 0.78;
         rtaBins = new Uint8Array(analyserNode.frequencyBinCount);
+        timeDomainBuf = new Float32Array(analyserNode.fftSize);
 
         masterGainNode = audioCtx.createGain();
         masterGainNode.gain.value = state.masterVolume;
@@ -1269,11 +1291,7 @@
     }
 
     function stopSourceNode() {
-      if (fadeGainNode && audioCtx) {
-        const now = audioCtx.currentTime;
-        fadeGainNode.gain.cancelScheduledValues(now);
-        fadeGainNode.gain.setValueAtTime(1.0, now);
-      }
+      clearPitchRingFlag = true;
       if (sourceNode) {
         sourceNode.onended = null;
         try { sourceNode.stop(); } catch (e) {}
@@ -1351,11 +1369,12 @@
         const fadeOutStartOff = Math.max(safeOffset, maxEnd - fadeOut);
         const delayUntilOut = Math.max(0, fadeOutStartOff - safeOffset);
         const outStartTime = now + delayUntilOut;
-        const outEndTime = now + playDuration;
+        const outEndTime = Math.max(outStartTime + 0.01, now + playDuration - 0.025);
         if (outStartTime > now + 0.01) {
           fadeGainNode.gain.setValueAtTime(1.0, outStartTime);
         }
         fadeGainNode.gain.linearRampToValueAtTime(0.0, outEndTime);
+        fadeGainNode.gain.setValueAtTime(0.0, now + playDuration + 0.1);
       }
 
       sourceNode = src;
@@ -1385,6 +1404,19 @@
       renderCueList();
       updateTransportUI();
       updateVisualsFrame();
+    }
+
+    function rescheduleLivePlayback(cue) {
+      if (!cue || !state.isPlaying || state.playingCueId !== cue.id) return;
+      const curPos = getPlayingCuePosition();
+      if (curPos >= cue.trimEndSec - 0.02) {
+        stopSourceNode();
+        handleCueEnded(cue.id);
+      } else if (curPos < cue.trimStartSec) {
+        startPlaybackCue(cue, cue.trimStartSec);
+      } else {
+        startPlaybackCue(cue, curPos);
+      }
     }
 
     function handleCueEnded(endedCueId) {
@@ -1437,6 +1469,13 @@
     function startTickLoop() {
       if (state.rafId) cancelAnimationFrame(state.rafId);
       const tick = () => {
+        const pCue = getPlayingCue();
+        if (state.isPlaying && pCue && getPlayingCuePosition() >= pCue.trimEndSec - 0.005) {
+          updateVisualsFrame();
+          stopSourceNode();
+          handleCueEnded(pCue.id);
+          return;
+        }
         updateVisualsFrame();
         if (state.isPlaying) {
           state.rafId = requestAnimationFrame(tick);
@@ -1594,25 +1633,25 @@
       const step = compact ? Math.max(1, Math.floor(peaks.length / totalBars)) : 1;
       const progress = Math.min(1, Math.max(0, posSec / dur));
 
-      const barGap = compact ? 1 : 1.5;
-      const barWidth = Math.max(1, (width - (totalBars - 1) * barGap) / totalBars);
+      const barStep = width / totalBars;
+      const barWidth = Math.max(0.6, barStep * 0.68);
       const maxBarHeight = height * (compact ? 0.88 : 0.82);
       const centerY = height / 2;
 
       for (let i = 0; i < totalBars; i++) {
         const peakVal = peaks[Math.min(peaks.length - 1, i * step)];
-        const x = i * (barWidth + barGap);
-        const barRatio = i / totalBars;
+        const x = i * barStep;
+        const barRatio = (i + 0.5) / totalBars;
         const h = Math.max(2, peakVal * maxBarHeight);
         const y = centerY - h / 2;
 
         const isTrimmedOut = barRatio < trimStartRatio || barRatio > trimEndRatio;
         if (isTrimmedOut) {
-          ctx.fillStyle = '#1e293b';
+          ctx.fillStyle = '#283142';
         } else if (barRatio <= progress) {
           ctx.fillStyle = isCuePlaying ? '#22d3ee' : '#10b981';
         } else {
-          ctx.fillStyle = compact ? '#3b4a63' : '#334155';
+          ctx.fillStyle = compact ? '#475569' : '#4b5563';
         }
 
         ctx.beginPath();
@@ -1948,7 +1987,89 @@
       });
     }
 
+    function drawLevelMeter() {
+      const canvas = levelMeterCanvas;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const targetW = Math.floor(rect.width * dpr);
+      const targetH = Math.floor(rect.height * dpr);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+
+      let peak = 0;
+      if (analyserNode && timeDomainBuf && state.isPlaying) {
+        analyserNode.getFloatTimeDomainData(timeDomainBuf);
+        for (let i = 0; i < timeDomainBuf.length; i += 2) {
+          const v = Math.abs(timeDomainBuf[i]);
+          if (v > peak) peak = v;
+        }
+        // Apply master volume visually so meter reflects output level
+        peak = Math.min(1.0, peak * state.masterVolume);
+      }
+
+      meterLevelSmooth = peak > meterLevelSmooth ? peak : meterLevelSmooth * 0.85;
+      const nowMs = performance.now();
+      if (peak >= meterPeakHold || nowMs - meterPeakHoldTime > 1100) {
+        meterPeakHold = peak;
+        meterPeakHoldTime = nowMs;
+      }
+
+      const db = meterLevelSmooth > 0.0005 ? (20 * Math.log10(meterLevelSmooth)) : -60;
+      const norm = Math.max(0, Math.min(1, (db + 48) / 48));
+      const holdDb = meterPeakHold > 0.0005 ? (20 * Math.log10(meterPeakHold)) : -60;
+      const holdNorm = Math.max(0, Math.min(1, (holdDb + 48) / 48));
+
+      // Segmented LED meter
+      const segments = 28;
+      const segStep = w / segments;
+      const segW = Math.max(1.5, segStep - 1.5);
+      const litCount = Math.round(norm * segments);
+
+      for (let i = 0; i < segments; i++) {
+        const ratio = i / segments;
+        const isLit = i < litCount;
+        if (ratio > 0.86) {
+          ctx.fillStyle = isLit ? '#f43f5e' : 'rgba(244, 63, 94, 0.14)';
+        } else if (ratio > 0.68) {
+          ctx.fillStyle = isLit ? '#fbbf24' : 'rgba(251, 191, 36, 0.14)';
+        } else {
+          ctx.fillStyle = isLit ? '#10b981' : 'rgba(16, 185, 129, 0.14)';
+        }
+        ctx.fillRect(i * segStep, 1, segW, h - 2);
+      }
+
+      if (holdNorm > 0.02) {
+        const hx = Math.min(w - 2, holdNorm * w);
+        ctx.fillStyle = holdDb > -3 ? '#fb7185' : '#e2e8f0';
+        ctx.fillRect(hx, 0, 2, h);
+      }
+
+      if (levelDbText) {
+        if (!state.isPlaying && meterLevelSmooth < 0.001) {
+          levelDbText.textContent = '-∞ dB';
+          levelDbText.className = 'font-mono-num text-[10px] font-bold text-slate-500 w-12 text-right shrink-0';
+        } else {
+          levelDbText.textContent = `${db.toFixed(1)} dB`;
+          levelDbText.className = db > -3
+            ? 'font-mono-num text-[10px] font-bold text-rose-400 w-12 text-right shrink-0'
+            : (db > -12 ? 'font-mono-num text-[10px] font-bold text-amber-300 w-12 text-right shrink-0' : 'font-mono-num text-[10px] font-bold text-emerald-400 w-12 text-right shrink-0');
+        }
+      }
+    }
+
     function updateVisualsFrame() {
+      drawLevelMeter();
       const selCue = getSelectedCue();
       const playingCue = getPlayingCue();
       const playingPos = getPlayingCuePosition();
@@ -2559,6 +2680,7 @@
       }
 
       if (mode === 'trimStart' || mode === 'trimEnd') {
+        rescheduleLivePlayback(cue);
         scheduleAutoSave();
         updateVisualsFrame();
         return;
@@ -2596,6 +2718,7 @@
       } else {
         cue.trimEndSec = Math.min(cue.duration, Math.max(cue.trimStartSec + 0.1, cue.trimEndSec + delta));
       }
+      rescheduleLivePlayback(cue);
       renderCueList();
       updateVisualsFrame();
       scheduleAutoSave();
@@ -2611,6 +2734,7 @@
       if (!cue) return;
       const pos = getSelectedCueDisplayPosition();
       cue.trimStartSec = Math.max(0, Math.min(cue.trimEndSec - 0.1, pos));
+      rescheduleLivePlayback(cue);
       renderCueList();
       updateVisualsFrame();
       scheduleAutoSave();
@@ -2621,6 +2745,7 @@
       if (!cue) return;
       const pos = getSelectedCueDisplayPosition();
       cue.trimEndSec = Math.min(cue.duration, Math.max(cue.trimStartSec + 0.1, pos));
+      rescheduleLivePlayback(cue);
       renderCueList();
       updateVisualsFrame();
       scheduleAutoSave();
@@ -2631,6 +2756,7 @@
       if (!cue) return;
       cue.trimStartSec = 0;
       cue.trimEndSec = cue.duration;
+      rescheduleLivePlayback(cue);
       renderCueList();
       updateVisualsFrame();
       scheduleAutoSave();
