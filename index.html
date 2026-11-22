@@ -19,7 +19,9 @@
       color-scheme: dark;
     }
     html, body {
-      overscroll-behavior-y: none;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
     }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
@@ -86,7 +88,8 @@
     }
   </style>
 </head>
-<body class="min-h-screen flex flex-col bg-[#090d16] text-slate-100 select-none">
+<body class="h-full flex flex-col bg-[#090d16] text-slate-100 select-none overflow-hidden">
+  <div id="appScrollRoot" class="flex-1 overflow-y-auto overscroll-none flex flex-col">
 
   <!-- Launch Splash Screen -->
   <div id="splashOverlay" class="fixed inset-0 z-[100] bg-[#070b12] flex flex-col items-center justify-center px-6 transition-opacity duration-500">
@@ -475,6 +478,8 @@
     </section>
 
   </main>
+
+  </div>
 
   <!-- Fixed Bottom Mobile Transport Deck -->
   <footer class="fixed bottom-0 inset-x-0 z-40 bg-[#0b101b]/95 backdrop-blur-md border-t border-slate-800 px-3 sm:px-5 pt-2.5 pb-3 shadow-[0_-10px_30px_rgba(0,0,0,0.6)]">
@@ -903,7 +908,8 @@
     // IndexedDB Persistence (Auto-save Workspace + Playlists)
     // =========================================================
     const DB_NAME = 'CuePlayerDB';
-    const DB_VERSION = 1;
+    const DB_VERSION = 2;
+    const META_LS_KEY = 'cueplayer_workspace_meta_v1';
 
     function openDb() {
       return new Promise((resolve, reject) => {
@@ -920,10 +926,31 @@
           if (!db.objectStoreNames.contains('playlists')) {
             db.createObjectStore('playlists', { keyPath: 'id' });
           }
+          if (!db.objectStoreNames.contains('audioFiles')) {
+            db.createObjectStore('audioFiles', { keyPath: 'id' });
+          }
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
       });
+    }
+
+    function serializeCueMeta(cues) {
+      return cues.map(c => ({
+        id: c.id,
+        name: c.name,
+        duration: c.duration,
+        peaks: c.peaks ? Array.from(c.peaks) : [],
+        endAction: c.endAction,
+        transpose: c.transpose,
+        eq: JSON.parse(JSON.stringify(c.eq)),
+        gainDb: c.gainDb,
+        trimStartSec: c.trimStartSec,
+        trimEndSec: c.trimEndSec,
+        groupName: c.groupName || '',
+        fadeInSec: c.fadeInSec || 0,
+        fadeOutSec: c.fadeOutSec || 0
+      }));
     }
 
     function serializeCuesForDb(cues) {
@@ -945,19 +972,56 @@
       }));
     }
 
+    async function saveAudioBinaryToDb(id, arrayBuffer) {
+      if (!id || !arrayBuffer) return;
+      try {
+        const db = await openDb();
+        const tx = db.transaction('audioFiles', 'readwrite');
+        tx.objectStore('audioFiles').put({ id, bytes: new Uint8Array(arrayBuffer) });
+        await new Promise((res, rej) => {
+          tx.oncomplete = res;
+          tx.onerror = rej;
+        });
+      } catch (err) {
+        console.warn('saveAudioBinaryToDb failed:', err);
+      }
+    }
+
+    async function deleteAudioBinaryFromDb(id) {
+      try {
+        const db = await openDb();
+        const tx = db.transaction('audioFiles', 'readwrite');
+        tx.objectStore('audioFiles').delete(id);
+      } catch (_) {}
+    }
+
+    function saveMetaSnapshotSync() {
+      try {
+        const meta = {
+          selectedCueId: state.selectedCueId,
+          masterVolume: state.masterVolume,
+          activeTab: state.activeTab,
+          collapsedGroups: state.collapsedGroups,
+          cues: serializeCueMeta(state.cues),
+          updatedAt: Date.now()
+        };
+        localStorage.setItem(META_LS_KEY, JSON.stringify(meta));
+      } catch (_) {}
+    }
+
     async function saveWorkspaceToDb() {
+      saveMetaSnapshotSync();
       try {
         autoSaveBadge.textContent = '저장 중...';
         const db = await openDb();
         const tx = db.transaction('workspace', 'readwrite');
-        const store = tx.objectStore('workspace');
-        store.put({
+        tx.objectStore('workspace').put({
           key: 'current',
           selectedCueId: state.selectedCueId,
           masterVolume: state.masterVolume,
           activeTab: state.activeTab,
           collapsedGroups: state.collapsedGroups,
-          cues: serializeCuesForDb(state.cues),
+          cues: serializeCueMeta(state.cues),
           updatedAt: Date.now()
         });
         await new Promise((res, rej) => {
@@ -1025,16 +1089,12 @@
       return result;
     }
 
-    async function restoreWorkspaceFromDb() {
+    function restoreWorkspaceSyncFromLocalStorage() {
       try {
-        const db = await openDb();
-        const tx = db.transaction('workspace', 'readonly');
-        const req = tx.objectStore('workspace').get('current');
-        const data = await new Promise((res, rej) => {
-          req.onsuccess = () => res(req.result);
-          req.onerror = () => rej(req.error);
-        });
-        if (!data || !Array.isArray(data.cues) || data.cues.length === 0) return;
+        const raw = localStorage.getItem(META_LS_KEY);
+        if (!raw) return false;
+        const data = JSON.parse(raw);
+        if (!data || !Array.isArray(data.cues) || data.cues.length === 0) return false;
 
         state.masterVolume = typeof data.masterVolume === 'number' ? data.masterVolume : 0.9;
         volumeSlider.value = state.masterVolume;
@@ -1043,14 +1103,79 @@
           state.collapsedGroups = data.collapsedGroups;
         }
         if (data.activeTab) {
-          setActiveTab(data.activeTab);
+          state.activeTab = data.activeTab;
         }
-
-        state.cues = await hydrateCuesFromSerialized(data.cues);
+        state.cues = data.cues.map(item => {
+          const dur = item.duration || 0;
+          return {
+            id: item.id,
+            name: item.name,
+            duration: dur,
+            buffer: null,
+            rawArrayBuffer: null,
+            peaks: item.peaks && item.peaks.length ? new Float32Array(item.peaks) : new Float32Array(220),
+            endAction: item.endAction || 'stop',
+            transpose: item.transpose || 0,
+            eq: item.eq || DEFAULT_EQ_BANDS(),
+            gainDb: typeof item.gainDb === 'number' ? item.gainDb : 0,
+            trimStartSec: typeof item.trimStartSec === 'number' ? Math.max(0, Math.min(dur, item.trimStartSec)) : 0,
+            trimEndSec: typeof item.trimEndSec === 'number' ? Math.max(0.05, Math.min(dur, item.trimEndSec)) : dur,
+            standbyOffsetSec: typeof item.trimStartSec === 'number' ? item.trimStartSec : 0,
+            groupName: item.groupName || '',
+            fadeInSec: typeof item.fadeInSec === 'number' ? item.fadeInSec : 0,
+            fadeOutSec: typeof item.fadeOutSec === 'number' ? item.fadeOutSec : 0
+          };
+        });
         state.selectedCueId = data.selectedCueId && state.cues.some(c => c.id === data.selectedCueId)
           ? data.selectedCueId
           : (state.cues[0]?.id || null);
-        renderAll();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function restoreWorkspaceFromDb() {
+      try {
+        const db = await openDb();
+        const tx = db.transaction(['workspace', 'audioFiles'], 'readonly');
+        const wsReq = tx.objectStore('workspace').get('current');
+        const audioReq = tx.objectStore('audioFiles').getAll();
+        const [data, audioRecords] = await Promise.all([
+          new Promise((res, rej) => { wsReq.onsuccess = () => res(wsReq.result); wsReq.onerror = () => rej(wsReq.error); }),
+          new Promise((res, rej) => { audioReq.onsuccess = () => res(audioReq.result || []); audioReq.onerror = () => rej(audioReq.error); })
+        ]);
+
+        const audioMap = new Map();
+        audioRecords.forEach(rec => {
+          if (rec && rec.id && rec.bytes && rec.bytes.buffer) {
+            audioMap.set(rec.id, rec.bytes.buffer.slice(rec.bytes.byteOffset, rec.bytes.byteOffset + rec.bytes.byteLength));
+          }
+        });
+
+        if (data && Array.isArray(data.cues) && data.cues.length > 0 && state.cues.length === 0) {
+          state.masterVolume = typeof data.masterVolume === 'number' ? data.masterVolume : 0.9;
+          volumeSlider.value = state.masterVolume;
+          volumeLabel.textContent = Math.round(state.masterVolume * 100) + '%';
+          if (data.collapsedGroups && typeof data.collapsedGroups === 'object') {
+            state.collapsedGroups = data.collapsedGroups;
+          }
+          if (data.activeTab) {
+            setActiveTab(data.activeTab);
+          }
+          state.cues = await hydrateCuesFromSerialized(data.cues);
+          state.selectedCueId = data.selectedCueId && state.cues.some(c => c.id === data.selectedCueId)
+            ? data.selectedCueId
+            : (state.cues[0]?.id || null);
+          renderAll();
+        }
+
+        // Attach audio binaries from audioFiles store (or legacy rawBytes)
+        state.cues.forEach(c => {
+          if (!c.rawArrayBuffer && audioMap.has(c.id)) {
+            c.rawArrayBuffer = audioMap.get(c.id);
+          }
+        });
       } catch (err) {
         console.warn('Restore workspace skipped:', err);
       }
@@ -1107,6 +1232,9 @@
 
       stopPlayback();
       state.cues = await hydrateCuesFromSerialized(record.cues || []);
+      for (const c of state.cues) {
+        if (c.rawArrayBuffer) await saveAudioBinaryToDb(c.id, c.rawArrayBuffer);
+      }
       state.selectedCueId = state.cues[0]?.id || null;
       renderAll();
       scheduleAutoSave();
@@ -1392,7 +1520,18 @@
       if (!cue) return;
       ensureAudioContext();
 
-      // Lazy-decode if restored from IndexedDB before AudioContext was ready
+      // Lazy-fetch binary from IndexedDB if needed, then decode
+      if (!cue.buffer && !cue.rawArrayBuffer) {
+        try {
+          const db = await openDb();
+          const tx = db.transaction('audioFiles', 'readonly');
+          const req = tx.objectStore('audioFiles').get(cue.id);
+          const rec = await new Promise((res) => { req.onsuccess = () => res(req.result); req.onerror = () => res(null); });
+          if (rec && rec.bytes && rec.bytes.buffer) {
+            cue.rawArrayBuffer = rec.bytes.buffer.slice(rec.bytes.byteOffset, rec.bytes.byteOffset + rec.bytes.byteLength);
+          }
+        } catch (_) {}
+      }
       if (!cue.buffer && cue.rawArrayBuffer) {
         try {
           cue.buffer = await audioCtx.decodeAudioData(cue.rawArrayBuffer.slice(0));
@@ -1596,6 +1735,7 @@
             endAction: 'stop'
           });
           state.cues.push(cue);
+          await saveAudioBinaryToDb(id, arrayBuffer);
           if (!firstAddedId) firstAddedId = id;
         } catch (err) {
           console.error(err);
@@ -3522,11 +3662,15 @@
         navigator.storage.persist().catch(() => {});
       }
 
-      setActiveTab('waveform');
+      const restoredSync = restoreWorkspaceSyncFromLocalStorage();
+      setActiveTab(state.activeTab || 'waveform');
       renderAll();
       lucide.createIcons();
       await restoreWorkspaceFromDb();
       workspaceRestored = true;
+      if (!restoredSync && state.cues.length > 0) {
+        saveMetaSnapshotSync();
+      }
 
       if (!isReload) {
         setTimeout(() => hideSplash(false), 1200);
