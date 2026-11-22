@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cue-player-network-first-v14';
+const CACHE_NAME = 'cue-player-network-first-v15';
 const ASSETS = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {

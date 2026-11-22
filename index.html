@@ -9,11 +9,21 @@
   <link rel="manifest" href="./manifest.json" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
   <title>Cue Player</title>
+  <style id="criticalSplashCss">
+    html, body { background-color: #070b12 !important; color: #f1f5f9; margin: 0; padding: 0; }
+    #splashOverlay {
+      position: fixed; inset: 0; z-index: 9999; background-color: #070b12;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px; transition: opacity 0.45s ease;
+    }
+    #splashOverlay.splash-hidden { opacity: 0; pointer-events: none; }
+    #splashOverlay.splash-gone { display: none !important; }
+  </style>
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <style>
     :root {
       color-scheme: dark;
@@ -92,9 +102,9 @@
   <div id="appScrollRoot" class="flex-1 overflow-y-auto overscroll-none flex flex-col">
 
   <!-- Launch Splash Screen -->
-  <div id="splashOverlay" class="fixed inset-0 z-[100] bg-[#070b12] flex flex-col items-center justify-center px-6 transition-opacity duration-500">
-    <div class="splash-logo-anim w-20 h-20 rounded-2xl bg-[#111827] border-2 border-emerald-500/60 shadow-[0_0_40px_rgba(16,185,129,0.25)] flex items-center justify-center mb-5">
-      <svg viewBox="0 0 64 64" class="w-12 h-12">
+  <div id="splashOverlay">
+    <div class="splash-logo-anim w-20 h-20 rounded-2xl bg-[#111827] border-2 border-emerald-500/60 shadow-[0_0_40px_rgba(16,185,129,0.25)] flex items-center justify-center mb-5" style="width:80px;height:80px;border-radius:16px;background:#111827;border:2px solid rgba(16,185,129,0.6);display:flex;align-items:center;justify-content:center;margin-bottom:20px;">
+      <svg viewBox="0 0 64 64" class="w-12 h-12" style="width:48px;height:48px;">
         <line x1="12" y1="24" x2="12" y2="40" stroke="#22d3ee" stroke-width="5" stroke-linecap="round" class="splash-bar" style="animation-delay:0s" />
         <line x1="22" y1="14" x2="22" y2="50" stroke="#10b981" stroke-width="5" stroke-linecap="round" class="splash-bar" style="animation-delay:0.12s" />
         <line x1="32" y1="10" x2="32" y2="54" stroke="#22d3ee" stroke-width="5" stroke-linecap="round" class="splash-bar" style="animation-delay:0.24s" />
@@ -102,10 +112,10 @@
         <line x1="52" y1="22" x2="52" y2="42" stroke="#22d3ee" stroke-width="5" stroke-linecap="round" class="splash-bar" style="animation-delay:0.48s" />
       </svg>
     </div>
-    <div class="splash-title-anim text-2xl sm:text-3xl font-extrabold text-white mb-1.5">
+    <div class="splash-title-anim text-2xl sm:text-3xl font-extrabold text-white mb-1.5" style="font-size:26px;font-weight:800;color:#ffffff;margin-bottom:6px;">
       Cue Player
     </div>
-    <div class="splash-sub-anim text-xs sm:text-sm font-medium text-cyan-300/80 tracking-wide">
+    <div class="splash-sub-anim text-xs sm:text-sm font-medium text-cyan-300/80 tracking-wide" style="font-size:13px;color:rgba(103,232,249,0.85);">
       Audio Timeline · Pitch · 6-Band EQ
     </div>
   </div>
@@ -128,6 +138,10 @@
       </div>
 
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <button id="openSettingsModalBtn" type="button" title="전환 페이드 설정" class="btn-press inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs sm:text-sm">
+          <i data-lucide="settings" class="w-4 h-4 text-cyan-400"></i>
+          <span class="hidden sm:inline">설정</span>
+        </button>
         <button id="openPlaylistModalBtn" type="button" class="btn-press inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs sm:text-sm">
           <i data-lucide="folder-heart" class="w-4 h-4 text-amber-400"></i>
           <span>플레이리스트</span>
@@ -735,6 +749,52 @@
     </div>
   </div>
 
+  <!-- Settings Modal (Transition Crossfade / Fade-Out) -->
+  <div id="settingsModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div id="settingsModalBackdrop" class="absolute inset-0 bg-black/65 backdrop-blur-sm"></div>
+    <div class="relative w-full max-w-md bg-[#111827] border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+      <div class="flex items-center justify-between px-4 py-3 bg-[#151e30] border-b border-slate-800">
+        <div class="flex items-center gap-2">
+          <i data-lucide="settings" class="w-4 h-4 text-cyan-400"></i>
+          <h3 class="text-sm font-bold text-white">재생 &amp; 전환 설정</h3>
+        </div>
+        <button id="closeSettingsModalBtn" type="button" class="btn-press p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="p-4 flex flex-col gap-3.5">
+        <div class="bg-[#090d16] rounded-xl p-3 border border-slate-800">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <div>
+              <div class="text-xs sm:text-sm font-bold text-white">곡 전환 시 이전 곡 페이드 아웃</div>
+              <div class="text-[11px] text-slate-400">재생 중 다른 곡으로 넘길 때 이전 곡이 서서히 줄어듭니다</div>
+            </div>
+            <span id="transitionFadeValText" class="font-mono-num text-xs sm:text-sm font-extrabold px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/30 whitespace-nowrap shrink-0">
+              1.5초
+            </span>
+          </div>
+          <input id="transitionFadeSlider" type="range" min="0" max="10" step="0.5" value="1.5" class="w-full accent-rose-400 h-2 bg-slate-800 rounded-lg cursor-pointer mb-2.5" />
+          <div class="grid grid-cols-5 gap-1.5">
+            <button type="button" data-tfade="0" class="tfade-preset btn-press py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-slate-300">0초</button>
+            <button type="button" data-tfade="0.5" class="tfade-preset btn-press py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-slate-300">0.5초</button>
+            <button type="button" data-tfade="1.5" class="tfade-preset btn-press py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-rose-300">1.5초</button>
+            <button type="button" data-tfade="3" class="tfade-preset btn-press py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-slate-300">3초</button>
+            <button type="button" data-tfade="5" class="tfade-preset btn-press py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-slate-300">5초</button>
+          </div>
+        </div>
+
+        <label class="flex items-center justify-between gap-3 bg-[#090d16] rounded-xl p-3 border border-slate-800 cursor-pointer">
+          <div>
+            <div class="text-xs sm:text-sm font-bold text-white">정지(Stop) 버튼에도 페이드 아웃 적용</div>
+            <div class="text-[11px] text-slate-400">끄면 정지 버튼은 즉시 멈추고, 곡 전환 시에만 페이드 아웃됩니다</div>
+          </div>
+          <input id="fadeOnStopToggle" type="checkbox" class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-rose-500 focus:ring-rose-500" />
+        </label>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div id="toast" class="fixed top-16 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-slate-800 border border-slate-700 text-xs font-medium text-white shadow-2xl opacity-0 pointer-events-none transition-opacity duration-200"></div>
 
@@ -784,7 +844,9 @@
       scrubPreviewSec: null,
       collapsedGroups: {},
       selectionMode: false,
-      checkedCueIds: []
+      checkedCueIds: [],
+      transitionFadeOutSec: 1.5,
+      fadeOnStop: false
     };
 
     const END_ACTION_META = {
@@ -997,12 +1059,20 @@
 
     function saveMetaSnapshotSync() {
       try {
+        const compactCues = state.cues.map(c => ({
+          id: c.id, name: c.name, duration: c.duration, endAction: c.endAction,
+          transpose: c.transpose, eq: c.eq, gainDb: c.gainDb,
+          trimStartSec: c.trimStartSec, trimEndSec: c.trimEndSec,
+          groupName: c.groupName || '', fadeInSec: c.fadeInSec || 0, fadeOutSec: c.fadeOutSec || 0
+        }));
         const meta = {
           selectedCueId: state.selectedCueId,
           masterVolume: state.masterVolume,
           activeTab: state.activeTab,
           collapsedGroups: state.collapsedGroups,
-          cues: serializeCueMeta(state.cues),
+          transitionFadeOutSec: state.transitionFadeOutSec,
+          fadeOnStop: state.fadeOnStop,
+          cues: compactCues,
           updatedAt: Date.now()
         };
         localStorage.setItem(META_LS_KEY, JSON.stringify(meta));
@@ -1105,6 +1175,12 @@
         if (data.activeTab) {
           state.activeTab = data.activeTab;
         }
+        if (typeof data.transitionFadeOutSec === 'number') {
+          state.transitionFadeOutSec = data.transitionFadeOutSec;
+        }
+        if (typeof data.fadeOnStop === 'boolean') {
+          state.fadeOnStop = data.fadeOnStop;
+        }
         state.cues = data.cues.map(item => {
           const dur = item.duration || 0;
           return {
@@ -1170,12 +1246,19 @@
           renderAll();
         }
 
-        // Attach audio binaries from audioFiles store (or legacy rawBytes)
+        const peaksMap = new Map();
+        if (data && Array.isArray(data.cues)) {
+          data.cues.forEach(dc => {
+            if (dc && dc.id && dc.peaks && dc.peaks.length) {
+              peaksMap.set(dc.id, new Float32Array(dc.peaks));
+            }
+          });
+        }
         state.cues.forEach(c => {
-          if (!c.rawArrayBuffer && audioMap.has(c.id)) {
-            c.rawArrayBuffer = audioMap.get(c.id);
-          }
+          if (peaksMap.has(c.id)) c.peaks = peaksMap.get(c.id);
+          if (!c.rawArrayBuffer && audioMap.has(c.id)) c.rawArrayBuffer = audioMap.get(c.id);
         });
+        renderAll();
       } catch (err) {
         console.warn('Restore workspace skipped:', err);
       }
@@ -1245,7 +1328,9 @@
     // =========================================================
     // Audio Engine Setup
     // =========================================================
-    function createPitchShifterNode(ctx) {
+    let pitchWorkletReady = false;
+
+    function createScriptPitchShifter(ctx) {
       const bufSize = 8192;
       const mask = bufSize - 1;
       const grainSize = 2048;
@@ -1254,7 +1339,7 @@
       let writeIdx = 0;
       let phasor = 0;
 
-      const proc = ctx.createScriptProcessor(2048, 2, 2);
+      const proc = ctx.createScriptProcessor(4096, 2, 2);
       proc.onaudioprocess = (e) => {
         if (clearPitchRingFlag) {
           ringL.fill(0);
@@ -1268,15 +1353,8 @@
         const n = inL.length;
 
         if (currentPitchSemitones === 0) {
-          for (let i = 0; i < n; i++) {
-            const sL = inL[i];
-            const sR = inR[i];
-            ringL[writeIdx] = sL;
-            ringR[writeIdx] = sR;
-            writeIdx = (writeIdx + 1) & mask;
-            outL[i] = sL;
-            outR[i] = sR;
-          }
+          outL.set(inL);
+          outR.set(inR);
           return;
         }
 
@@ -1286,13 +1364,10 @@
         for (let i = 0; i < n; i++) {
           ringL[writeIdx] = inL[i];
           ringR[writeIdx] = inR[i];
-
           const p1 = phasor;
           const p2 = p1 >= 0.5 ? p1 - 0.5 : p1 + 0.5;
-
           const d1 = p1 * grainSize;
           const d2 = p2 * grainSize;
-
           const w1 = 0.5 * (1.0 - Math.cos(6.283185307179586 * p1));
           const w2 = 1.0 - w1;
 
@@ -1322,12 +1397,104 @@
       return proc;
     }
 
+    async function initAudioWorkletPitchShifter(ctx) {
+      if (!ctx.audioWorklet) return;
+      const workletCode = `
+        class PitchShiftProcessor extends AudioWorkletProcessor {
+          static get parameterDescriptors() {
+            return [{ name: 'semitones', defaultValue: 0, minValue: -12, maxValue: 12, automationRate: 'k-rate' }];
+          }
+          constructor() {
+            super();
+            this.bufSize = 8192;
+            this.mask = 8191;
+            this.grainSize = 2048;
+            this.ringL = new Float32Array(this.bufSize);
+            this.ringR = new Float32Array(this.bufSize);
+            this.writeIdx = 0;
+            this.phasor = 0;
+          }
+          process(inputs, outputs, parameters) {
+            const input = inputs[0];
+            const output = outputs[0];
+            if (!input || input.length === 0 || !output || output.length === 0) return true;
+            const inL = input[0];
+            const inR = input.length > 1 ? input[1] : inL;
+            const outL = output[0];
+            const outR = output.length > 1 ? output[1] : output[0];
+            const semi = parameters.semitones[0];
+            const n = inL.length;
+
+            if (Math.abs(semi) < 0.01) {
+              outL.set(inL);
+              if (outR !== outL) outR.set(inR);
+              return true;
+            }
+
+            const pitchRatio = Math.pow(2, semi / 12);
+            const dp = (1.0 - pitchRatio) / this.grainSize;
+            const mask = this.mask;
+            const gs = this.grainSize;
+
+            for (let i = 0; i < n; i++) {
+              this.ringL[this.writeIdx] = inL[i];
+              this.ringR[this.writeIdx] = inR[i];
+              const p1 = this.phasor;
+              const p2 = p1 >= 0.5 ? p1 - 0.5 : p1 + 0.5;
+              const d1 = p1 * gs;
+              const d2 = p2 * gs;
+              const w1 = 0.5 * (1.0 - Math.cos(6.283185307179586 * p1));
+              const w2 = 1.0 - w1;
+
+              const rp1 = this.writeIdx - d1;
+              const i1a = Math.floor(rp1) & mask;
+              const i1b = (i1a + 1) & mask;
+              const f1 = rp1 - Math.floor(rp1);
+              const s1L = this.ringL[i1a] + (this.ringL[i1b] - this.ringL[i1a]) * f1;
+              const s1R = this.ringR[i1a] + (this.ringR[i1b] - this.ringR[i1a]) * f1;
+
+              const rp2 = this.writeIdx - d2;
+              const i2a = Math.floor(rp2) & mask;
+              const i2b = (i2a + 1) & mask;
+              const f2 = rp2 - Math.floor(rp2);
+              const s2L = this.ringL[i2a] + (this.ringL[i2b] - this.ringL[i2a]) * f2;
+              const s2R = this.ringR[i2a] + (this.ringR[i2b] - this.ringR[i2a]) * f2;
+
+              outL[i] = s1L * w1 + s2L * w2;
+              if (outR !== outL) outR[i] = s1R * w1 + s2R * w2;
+
+              this.writeIdx = (this.writeIdx + 1) & mask;
+              this.phasor += dp;
+              if (this.phasor >= 1.0) this.phasor -= 1.0;
+              else if (this.phasor < 0.0) this.phasor += 1.0;
+            }
+            return true;
+          }
+        }
+        registerProcessor('pitch-shift-processor', PitchShiftProcessor);
+      `;
+      try {
+        const blob = new Blob([workletCode], { type: 'application/javascript' });
+        const url = URL.createObjectURL(blob);
+        await ctx.audioWorklet.addModule(url);
+        URL.revokeObjectURL(url);
+        const workletNode = new AudioWorkletNode(ctx, 'pitch-shift-processor', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+        if (pitchShifterNode) {
+          try { pitchShifterNode.disconnect(); } catch (_) {}
+        }
+        pitchShifterNode = workletNode;
+        pitchShifterNode.connect(eqFilterNodes[0]);
+        pitchShifterNode.parameters.get('semitones').value = currentPitchSemitones;
+        pitchWorkletReady = true;
+      } catch (err) {
+        console.warn('AudioWorklet fallback to ScriptProcessor:', err);
+      }
+    }
+
     function ensureAudioContext() {
       if (!audioCtx) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        audioCtx = new AudioContextClass();
-
-        pitchShifterNode = createPitchShifterNode(audioCtx);
+        audioCtx = new AudioContextClass({ latencyHint: 'playback' });
 
         eqFilterNodes = DEFAULT_EQ_BANDS().map(b => {
           const node = audioCtx.createBiquadFilter();
@@ -1338,10 +1505,13 @@
           return node;
         });
 
-        pitchShifterNode.connect(eqFilterNodes[0]);
         for (let i = 0; i < eqFilterNodes.length - 1; i++) {
           eqFilterNodes[i].connect(eqFilterNodes[i + 1]);
         }
+
+        pitchShifterNode = createScriptPitchShifter(audioCtx);
+        pitchShifterNode.connect(eqFilterNodes[0]);
+        initAudioWorkletPitchShifter(audioCtx);
 
         cueGainNode = audioCtx.createGain();
         analyserNode = audioCtx.createAnalyser();
@@ -1369,35 +1539,39 @@
 
     function applyCueDspToLiveGraph(cue) {
       if (!audioCtx || !cue) return;
+      const t = audioCtx.currentTime;
       cue.eq.forEach((band, i) => {
         const node = eqFilterNodes[i];
         if (!node) return;
         if (!band.enabled) {
           if (band.type === 'highpass') {
             node.type = 'highpass';
-            node.frequency.value = 10;
-            node.Q.value = 0.707;
+            node.frequency.setTargetAtTime(10, t, 0.015);
+            node.Q.setTargetAtTime(0.707, t, 0.015);
           } else if (band.type === 'lowpass') {
             node.type = 'lowpass';
-            node.frequency.value = 22000;
-            node.Q.value = 0.707;
+            node.frequency.setTargetAtTime(22000, t, 0.015);
+            node.Q.setTargetAtTime(0.707, t, 0.015);
           } else {
             node.type = band.type;
-            node.frequency.value = band.freq;
-            node.Q.value = band.q;
-            node.gain.value = 0;
+            node.frequency.setTargetAtTime(band.freq, t, 0.015);
+            node.Q.setTargetAtTime(band.q, t, 0.015);
+            node.gain.setTargetAtTime(0, t, 0.015);
           }
         } else {
           node.type = band.type;
-          node.frequency.value = band.freq;
-          node.Q.value = band.q;
-          node.gain.value = band.gain;
+          node.frequency.setTargetAtTime(band.freq, t, 0.015);
+          node.Q.setTargetAtTime(band.q, t, 0.015);
+          node.gain.setTargetAtTime(band.gain, t, 0.015);
         }
       });
 
-      cueGainNode.gain.setTargetAtTime(Math.pow(10, cue.gainDb / 20), audioCtx.currentTime, 0.015);
+      cueGainNode.gain.setTargetAtTime(Math.pow(10, cue.gainDb / 20), t, 0.015);
       if (state.playingCueId === cue.id) {
         currentPitchSemitones = cue.transpose;
+        if (pitchWorkletReady && pitchShifterNode?.parameters) {
+          pitchShifterNode.parameters.get('semitones').setValueAtTime(cue.transpose, t);
+        }
       }
     }
 
@@ -1516,7 +1690,33 @@
       }
     }
 
-    async function startPlaybackCue(cue, fromOffsetSec) {
+    function fadeOutOldSource(oldSrc, fadeSec) {
+      if (!oldSrc || !audioCtx) return;
+      oldSrc.onended = null;
+      if (fadeSec <= 0.02) {
+        try { oldSrc.stop(); } catch (_) {}
+        try { oldSrc.disconnect(); } catch (_) {}
+        return;
+      }
+      try {
+        const tailGain = audioCtx.createGain();
+        const now = audioCtx.currentTime;
+        tailGain.gain.setValueAtTime(1.0, now);
+        tailGain.gain.linearRampToValueAtTime(0.0, now + fadeSec);
+        oldSrc.disconnect();
+        oldSrc.connect(tailGain);
+        tailGain.connect(analyserNode);
+        oldSrc.stop(now + fadeSec + 0.05);
+        setTimeout(() => {
+          try { oldSrc.disconnect(); } catch (_) {}
+          try { tailGain.disconnect(); } catch (_) {}
+        }, (fadeSec + 0.15) * 1000);
+      } catch (_) {
+        try { oldSrc.stop(); } catch (_) {}
+      }
+    }
+
+    async function startPlaybackCue(cue, fromOffsetSec, withTransitionFade = false) {
       if (!cue) return;
       ensureAudioContext();
 
@@ -1546,7 +1746,13 @@
       }
       if (!cue.buffer) return;
 
-      stopSourceNode();
+      if (withTransitionFade && sourceNode && state.transitionFadeOutSec > 0) {
+        const oldSrc = sourceNode;
+        sourceNode = null;
+        fadeOutOldSource(oldSrc, state.transitionFadeOutSec);
+      } else {
+        stopSourceNode();
+      }
 
       state.playingCueId = cue.id;
       const minStart = cue.trimStartSec;
@@ -3444,12 +3650,27 @@
           startPlaybackCue(selCue, state.playingOffsetSec);
         }
       } else {
-        startPlaybackCue(selCue, selCue.standbyOffsetSec ?? selCue.trimStartSec);
+        const switchingWhilePlaying = state.isPlaying && state.playingCueId && state.playingCueId !== selCue.id;
+        startPlaybackCue(selCue, selCue.standbyOffsetSec ?? selCue.trimStartSec, switchingWhilePlaying);
       }
     });
 
     stopBtn.addEventListener('click', () => {
-      stopPlayback();
+      if (state.isPlaying && state.fadeOnStop && state.transitionFadeOutSec > 0 && sourceNode) {
+        const oldSrc = sourceNode;
+        sourceNode = null;
+        fadeOutOldSource(oldSrc, state.transitionFadeOutSec);
+        const playingCue = getPlayingCue();
+        state.isPlaying = false;
+        state.playingOffsetSec = playingCue ? playingCue.trimStartSec : 0;
+        state.playingCueId = null;
+        if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = null; }
+        renderCueList();
+        updateTransportUI();
+        updateVisualsFrame();
+      } else {
+        stopPlayback();
+      }
     });
 
     prevCueBtn.addEventListener('click', () => moveCueSelection(-1));
@@ -3632,38 +3853,79 @@
       }
     });
 
-    // Splash dismissal (skip splash on pull-to-refresh / reload!)
+    // Settings Modal Logic
+    const openSettingsModalBtn = document.getElementById('openSettingsModalBtn');
+    const settingsModal = document.getElementById('settingsModal');
+    const settingsModalBackdrop = document.getElementById('settingsModalBackdrop');
+    const closeSettingsModalBtn = document.getElementById('closeSettingsModalBtn');
+    const transitionFadeSlider = document.getElementById('transitionFadeSlider');
+    const transitionFadeValText = document.getElementById('transitionFadeValText');
+    const fadeOnStopToggle = document.getElementById('fadeOnStopToggle');
+
+    function syncSettingsModalUI() {
+      transitionFadeSlider.value = state.transitionFadeOutSec;
+      transitionFadeValText.textContent = state.transitionFadeOutSec.toFixed(1) + '초';
+      fadeOnStopToggle.checked = !!state.fadeOnStop;
+    }
+
+    function openSettingsModal() {
+      syncSettingsModalUI();
+      settingsModal.classList.remove('hidden');
+      settingsModal.classList.add('flex');
+    }
+
+    function closeSettingsModal() {
+      settingsModal.classList.add('hidden');
+      settingsModal.classList.remove('flex');
+    }
+
+    openSettingsModalBtn.addEventListener('click', openSettingsModal);
+    closeSettingsModalBtn.addEventListener('click', closeSettingsModal);
+    settingsModalBackdrop.addEventListener('click', closeSettingsModal);
+
+    transitionFadeSlider.addEventListener('input', (e) => {
+      state.transitionFadeOutSec = parseFloat(e.target.value) || 0;
+      transitionFadeValText.textContent = state.transitionFadeOutSec.toFixed(1) + '초';
+      scheduleAutoSave();
+    });
+
+    document.querySelectorAll('.tfade-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.transitionFadeOutSec = parseFloat(btn.dataset.tfade) || 0;
+        syncSettingsModalUI();
+        scheduleAutoSave();
+      });
+    });
+
+    fadeOnStopToggle.addEventListener('change', (e) => {
+      state.fadeOnStop = e.target.checked;
+      scheduleAutoSave();
+    });
+
+    // Splash dismissal (2.5s auto fade-out, or instant on tap!)
+    let splashDismissed = false;
     function hideSplash(immediate = false) {
+      if (splashDismissed) return;
+      splashDismissed = true;
       if (immediate) {
-        splashOverlay.classList.add('hidden');
+        splashOverlay.classList.add('splash-gone');
         return;
       }
-      splashOverlay.classList.add('opacity-0', 'pointer-events-none');
+      splashOverlay.classList.add('splash-hidden');
       setTimeout(() => {
-        splashOverlay.classList.add('hidden');
-      }, 500);
+        splashOverlay.classList.add('splash-gone');
+      }, 460);
     }
     splashOverlay.addEventListener('click', () => hideSplash(false));
 
     window.addEventListener('load', async () => {
-      let isReload = false;
-      try {
-        const nav = performance.getEntriesByType?.('navigation')?.[0];
-        if (nav && nav.type === 'reload') isReload = true;
-        if (sessionStorage.getItem('cueplayer_session_active')) isReload = true;
-        sessionStorage.setItem('cueplayer_session_active', '1');
-      } catch (_) {}
-
-      if (isReload) {
-        hideSplash(true);
-      }
-
       if (navigator.storage?.persist) {
         navigator.storage.persist().catch(() => {});
       }
 
       const restoredSync = restoreWorkspaceSyncFromLocalStorage();
       setActiveTab(state.activeTab || 'waveform');
+      syncSettingsModalUI();
       renderAll();
       lucide.createIcons();
       await restoreWorkspaceFromDb();
@@ -3672,9 +3934,7 @@
         saveMetaSnapshotSync();
       }
 
-      if (!isReload) {
-        setTimeout(() => hideSplash(false), 1200);
-      }
+      setTimeout(() => hideSplash(false), 2500);
     });
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.protocol === 'http:')) {
       navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
