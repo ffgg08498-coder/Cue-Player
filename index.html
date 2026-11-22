@@ -480,6 +480,8 @@
     let analyserNode = null;
     let eqFilterNodes = []; // 6 BiquadFilterNodes matching cue.eq[0..5]
     let sourceNode = null;
+    let pitchShifterNode = null;
+    let currentPitchSemitones = 0;
     let rtaBins = null;
 
     const DEFAULT_EQ_BANDS = () => ([
@@ -597,10 +599,87 @@
     // =========================================================
     // Audio Engine Setup
     // =========================================================
+    // Speed-preserving 2-tap Hann-windowed Pitch Shifter (keeps tempo 100% constant)
+    function createPitchShifterNode(ctx) {
+      const bufSize = 8192;
+      const mask = bufSize - 1;
+      const grainSize = 2048;
+      const ringL = new Float32Array(bufSize);
+      const ringR = new Float32Array(bufSize);
+      let writeIdx = 0;
+      let phasor = 0;
+
+      const proc = ctx.createScriptProcessor(2048, 2, 2);
+      proc.onaudioprocess = (e) => {
+        const inL = e.inputBuffer.getChannelData(0);
+        const inR = e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : inL;
+        const outL = e.outputBuffer.getChannelData(0);
+        const outR = e.outputBuffer.getChannelData(1);
+        const n = inL.length;
+
+        if (currentPitchSemitones === 0) {
+          for (let i = 0; i < n; i++) {
+            const sL = inL[i];
+            const sR = inR[i];
+            ringL[writeIdx] = sL;
+            ringR[writeIdx] = sR;
+            writeIdx = (writeIdx + 1) & mask;
+            outL[i] = sL;
+            outR[i] = sR;
+          }
+          return;
+        }
+
+        const pitchRatio = Math.pow(2, currentPitchSemitones / 12);
+        const dp = (1.0 - pitchRatio) / grainSize;
+
+        for (let i = 0; i < n; i++) {
+          ringL[writeIdx] = inL[i];
+          ringR[writeIdx] = inR[i];
+
+          const p1 = phasor;
+          const p2 = p1 >= 0.5 ? p1 - 0.5 : p1 + 0.5;
+
+          const d1 = p1 * grainSize;
+          const d2 = p2 * grainSize;
+
+          const w1 = 0.5 * (1.0 - Math.cos(6.283185307179586 * p1));
+          const w2 = 1.0 - w1;
+
+          // Linear interpolation read for tap 1
+          const rp1 = writeIdx - d1;
+          const i1a = Math.floor(rp1) & mask;
+          const i1b = (i1a + 1) & mask;
+          const f1 = rp1 - Math.floor(rp1);
+          const s1L = ringL[i1a] + (ringL[i1b] - ringL[i1a]) * f1;
+          const s1R = ringR[i1a] + (ringR[i1b] - ringR[i1a]) * f1;
+
+          // Linear interpolation read for tap 2
+          const rp2 = writeIdx - d2;
+          const i2a = Math.floor(rp2) & mask;
+          const i2b = (i2a + 1) & mask;
+          const f2 = rp2 - Math.floor(rp2);
+          const s2L = ringL[i2a] + (ringL[i2b] - ringL[i2a]) * f2;
+          const s2R = ringR[i2a] + (ringR[i2b] - ringR[i2a]) * f2;
+
+          outL[i] = s1L * w1 + s2L * w2;
+          outR[i] = s1R * w1 + s2R * w2;
+
+          writeIdx = (writeIdx + 1) & mask;
+          phasor += dp;
+          if (phasor >= 1.0) phasor -= 1.0;
+          else if (phasor < 0.0) phasor += 1.0;
+        }
+      };
+      return proc;
+    }
+
     function ensureAudioContext() {
       if (!audioCtx) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         audioCtx = new AudioContextClass();
+
+        pitchShifterNode = createPitchShifterNode(audioCtx);
 
         eqFilterNodes = DEFAULT_EQ_BANDS().map(b => {
           const node = audioCtx.createBiquadFilter();
@@ -611,6 +690,7 @@
           return node;
         });
 
+        pitchShifterNode.connect(eqFilterNodes[0]);
         for (let i = 0; i < eqFilterNodes.length - 1; i++) {
           eqFilterNodes[i].connect(eqFilterNodes[i + 1]);
         }
@@ -663,8 +743,8 @@
       });
 
       cueGainNode.gain.value = Math.pow(10, cue.gainDb / 20);
-      if (sourceNode && state.playingCueId === cue.id) {
-        sourceNode.detune.value = cue.transpose * 100;
+      if (state.playingCueId === cue.id) {
+        currentPitchSemitones = cue.transpose;
       }
     }
 
@@ -857,10 +937,11 @@
 
       applyCueDspToLiveGraph(cue);
 
+      currentPitchSemitones = cue.transpose;
       const src = audioCtx.createBufferSource();
       src.buffer = cue.buffer;
-      src.detune.value = cue.transpose * 100;
-      src.connect(eqFilterNodes[0]);
+      src.detune.value = 0;
+      src.connect(pitchShifterNode);
 
       const expectedCueId = cue.id;
       src.onended = () => {
