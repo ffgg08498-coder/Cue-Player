@@ -18,6 +18,9 @@
     :root {
       color-scheme: dark;
     }
+    html, body {
+      overscroll-behavior-y: none;
+    }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
       background-color: #090d16;
@@ -357,7 +360,7 @@
           <div class="flex items-center justify-between gap-2 mb-3">
             <div class="min-w-0">
               <div class="text-xs sm:text-sm font-bold text-white">개별 곡 게인 (Cue Gain)</div>
-              <div class="text-[11px] text-slate-400 truncate">기준 0.0 dB · 곡마다 다른 음량 편차를 보정합니다</div>
+              <div class="text-[11px] text-slate-400 truncate">중앙 0.0 dB 기준 · -30 dB ~ +30 dB 조절</div>
             </div>
             <div id="cueGainBadge" class="font-mono-num px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 whitespace-nowrap shrink-0 flex items-baseline gap-1">
               <span id="cueGainDbText" class="text-xs sm:text-sm font-extrabold">0.0 dB</span>
@@ -365,13 +368,18 @@
             </div>
           </div>
 
-          <input id="cueGainSlider" type="range" min="-24" max="6" step="0.5" value="0" class="w-full accent-emerald-400 h-2 bg-slate-800 rounded-lg cursor-pointer mb-3" />
+          <input id="cueGainSlider" type="range" min="-30" max="30" step="0.5" value="0" class="w-full accent-emerald-400 h-2 bg-slate-800 rounded-lg cursor-pointer mb-1.5" />
+          <div class="flex justify-between text-[10px] font-mono-num text-slate-500 mb-2.5 px-0.5">
+            <span>-30 dB</span>
+            <span class="text-emerald-400 font-bold">0 dB</span>
+            <span>+30 dB</span>
+          </div>
 
           <div class="grid grid-cols-4 gap-2 mb-3.5">
-            <button type="button" data-gain-db="-6" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300">-6 dB</button>
-            <button type="button" data-gain-db="-3" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300">-3 dB</button>
+            <button type="button" data-gain-db="-12" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300">-12 dB</button>
             <button type="button" data-gain-db="0" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-emerald-300">0 dB (기본)</button>
-            <button type="button" data-gain-db="3" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300">+3 dB</button>
+            <button type="button" data-gain-db="12" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300">+12 dB</button>
+            <button type="button" data-gain-db="24" class="cue-gain-preset btn-press py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300">+24 dB</button>
           </div>
 
           <!-- Live Waveform + Fade Curve Preview inside Gain Tab -->
@@ -408,23 +416,41 @@
 
     <!-- Cue Timeline -->
     <section class="flex-1 flex flex-col bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-      <div class="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 bg-[#151e30] border-b border-slate-800">
+      <div id="timelineNormalBar" class="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 bg-[#151e30] border-b border-slate-800">
         <div class="flex items-center gap-2">
           <i data-lucide="list-music" class="w-4 h-4 text-cyan-400"></i>
           <h3 class="text-xs sm:text-sm font-bold text-slate-100">음원 큐 타임라인</h3>
           <span id="cueCountBadge" class="font-mono-num text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">0곡</span>
         </div>
 
-        <div class="flex items-center gap-2.5">
+        <div class="flex items-center gap-2">
           <span class="hidden sm:inline text-[11px] text-slate-400">
-            방향키·터치 이동 시 재생 중인 곡은 유지 · <span class="text-emerald-400 font-semibold">GO</span>로 실행
+            길게 눌러 다중 선택
           </span>
           <button id="openGroupModalBtn" type="button" class="btn-press inline-flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-[11px] font-semibold text-indigo-300">
             <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
             <span>그룹 묶기</span>
           </button>
           <button id="clearAllCuesBtn" type="button" class="btn-press px-2 py-1 rounded-md bg-slate-800 hover:bg-rose-500/20 border border-slate-700 hover:border-rose-500/40 text-[11px] font-semibold text-slate-300 hover:text-rose-300">
-            목록 비우기
+            전체 삭제
+          </button>
+        </div>
+      </div>
+
+      <!-- Multi-Select Action Bar (shown when long-pressing a cue) -->
+      <div id="timelineSelectBar" class="hidden flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-rose-950/40 border-b border-rose-500/30">
+        <div class="flex items-center gap-2">
+          <span id="selectedCountBadge" class="font-mono-num text-xs font-bold text-rose-300">0곡 선택됨</span>
+          <button id="selectAllCuesBtn" type="button" class="btn-press px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-slate-200">
+            전체 선택
+          </button>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <button id="deleteSelectedCuesBtn" type="button" class="btn-press px-2.5 py-1 rounded-md bg-rose-500 hover:bg-rose-400 text-white text-[11px] font-bold">
+            선택 삭제
+          </button>
+          <button id="cancelSelectModeBtn" type="button" class="btn-press px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[11px] font-semibold text-slate-200">
+            취소
           </button>
         </div>
       </div>
@@ -751,7 +777,9 @@
       saveTimer: null,
       waveDragMode: null, // 'scrub' | 'trimStart' | 'trimEnd' | null
       scrubPreviewSec: null,
-      collapsedGroups: {}
+      collapsedGroups: {},
+      selectionMode: false,
+      checkedCueIds: []
     };
 
     const END_ACTION_META = {
@@ -903,7 +931,7 @@
         id: c.id,
         name: c.name,
         duration: c.duration,
-        rawArrayBuffer: c.rawArrayBuffer || null,
+        rawBytes: c.rawArrayBuffer ? new Uint8Array(c.rawArrayBuffer) : null,
         peaks: c.peaks ? Array.from(c.peaks) : [],
         endAction: c.endAction,
         transpose: c.transpose,
@@ -965,22 +993,23 @@
     }
 
     async function hydrateCuesFromSerialized(serializedList) {
+      // Instant hydration (0ms) using saved peaks & metadata; audio buffer is decoded lazily on play!
       const result = [];
       for (const item of serializedList) {
-        let buffer = null;
-        try {
-          buffer = await decodeStoredCueBuffer(item.rawArrayBuffer);
-        } catch (e) {
-          console.warn('Deferred decode for', item.name);
+        let rawBuf = null;
+        if (item.rawBytes && item.rawBytes.buffer) {
+          rawBuf = item.rawBytes.buffer.slice(item.rawBytes.byteOffset, item.rawBytes.byteOffset + item.rawBytes.byteLength);
+        } else if (item.rawArrayBuffer) {
+          rawBuf = item.rawArrayBuffer;
         }
-        const dur = buffer ? buffer.duration : (item.duration || 0);
+        const dur = item.duration || 0;
         result.push({
           id: item.id,
           name: item.name,
           duration: dur,
-          buffer,
-          rawArrayBuffer: item.rawArrayBuffer || null,
-          peaks: item.peaks && item.peaks.length ? new Float32Array(item.peaks) : (buffer ? extractPeaks(buffer) : new Float32Array(220)),
+          buffer: null,
+          rawArrayBuffer: rawBuf,
+          peaks: item.peaks && item.peaks.length ? new Float32Array(item.peaks) : new Float32Array(220),
           endAction: item.endAction || 'stop',
           transpose: item.transpose || 0,
           eq: item.eq || DEFAULT_EQ_BANDS(),
@@ -1238,7 +1267,7 @@
         }
       });
 
-      cueGainNode.gain.value = Math.pow(10, cue.gainDb / 20);
+      cueGainNode.gain.setTargetAtTime(Math.pow(10, cue.gainDb / 20), audioCtx.currentTime, 0.015);
       if (state.playingCueId === cue.id) {
         currentPitchSemitones = cue.transpose;
       }
@@ -1579,7 +1608,7 @@
       }
 
       renderAll();
-      scheduleAutoSave();
+      await saveWorkspaceToDb();
       showToast(`${files.length}개 곡이 타임라인에 추가되었습니다.`);
     }
 
@@ -2399,6 +2428,19 @@
 
     function renderCueList() {
       cueCountBadge.textContent = `${state.cues.length}곡`;
+      const normalBar = document.getElementById('timelineNormalBar');
+      const selectBar = document.getElementById('timelineSelectBar');
+      const selectedCountBadge = document.getElementById('selectedCountBadge');
+      if (state.selectionMode) {
+        normalBar.classList.add('hidden');
+        selectBar.classList.remove('hidden');
+        selectBar.classList.add('flex');
+        selectedCountBadge.textContent = `${state.checkedCueIds.length}곡 선택됨`;
+      } else {
+        normalBar.classList.remove('hidden');
+        selectBar.classList.add('hidden');
+        selectBar.classList.remove('flex');
+      }
 
       if (state.cues.length === 0) {
         cueListContainer.innerHTML = `
@@ -2464,7 +2506,12 @@
 
         return groupHeaderHtml + `
           <div data-cue-id="${cue.id}" class="cue-row group grid grid-cols-[44px_1fr_auto_auto] sm:grid-cols-[56px_1fr_110px_84px_72px] items-center gap-2 px-3 sm:px-4 py-2.5 cursor-pointer transition-colors ${rowBg}">
-            <div class="flex items-center gap-1">
+            <div class="flex items-center gap-1.5">
+              ${state.selectionMode ? `
+                <span class="w-4 h-4 rounded border flex items-center justify-center ${state.checkedCueIds.includes(cue.id) ? 'bg-rose-500 border-rose-400 text-white' : 'border-slate-600 bg-slate-900'}">
+                  ${state.checkedCueIds.includes(cue.id) ? '<i data-lucide="check" class="w-3 h-3"></i>' : ''}
+                </span>
+              ` : ''}
               <span class="font-mono-num text-xs sm:text-sm font-bold ${isActivelyPlaying ? 'text-emerald-400' : (isSelected ? 'text-cyan-300' : 'text-slate-400')}">
                 ${numStr}
               </span>
@@ -2667,8 +2714,90 @@
 
       const row = e.target.closest('.cue-row');
       if (row) {
-        selectCueOnly(row.dataset.cueId);
+        if (ignoreNextCueClick) {
+          ignoreNextCueClick = false;
+          return;
+        }
+        const cid = row.dataset.cueId;
+        if (state.selectionMode) {
+          const idx = state.checkedCueIds.indexOf(cid);
+          if (idx >= 0) state.checkedCueIds.splice(idx, 1);
+          else state.checkedCueIds.push(cid);
+          renderCueList();
+        } else {
+          selectCueOnly(cid);
+        }
       }
+    });
+
+    let longPressTimer = null;
+    let ignoreNextCueClick = false;
+    let longPressStartY = 0;
+
+    cueListContainer.addEventListener('pointerdown', (e) => {
+      const row = e.target.closest('.cue-row');
+      if (!row || e.target.closest('button')) return;
+      longPressStartY = e.clientY;
+      const cid = row.dataset.cueId;
+      clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(() => {
+        ignoreNextCueClick = true;
+        state.selectionMode = true;
+        if (!state.checkedCueIds.includes(cid)) {
+          state.checkedCueIds.push(cid);
+        }
+        renderCueList();
+        showToast('다중 선택 모드: 삭제할 곡을 터치하세요.');
+      }, 450);
+    });
+
+    cueListContainer.addEventListener('pointermove', (e) => {
+      if (longPressTimer && Math.abs(e.clientY - longPressStartY) > 10) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    });
+
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => {
+      cueListContainer.addEventListener(ev, () => {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      });
+    });
+
+    document.getElementById('selectAllCuesBtn').addEventListener('click', () => {
+      if (state.checkedCueIds.length === state.cues.length) {
+        state.checkedCueIds = [];
+      } else {
+        state.checkedCueIds = state.cues.map(c => c.id);
+      }
+      renderCueList();
+    });
+
+    document.getElementById('cancelSelectModeBtn').addEventListener('click', () => {
+      state.selectionMode = false;
+      state.checkedCueIds = [];
+      renderCueList();
+    });
+
+    document.getElementById('deleteSelectedCuesBtn').addEventListener('click', async () => {
+      if (state.checkedCueIds.length === 0) {
+        showToast('삭제할 곡을 선택해주세요.');
+        return;
+      }
+      const toDelete = new Set(state.checkedCueIds);
+      if (state.playingCueId && toDelete.has(state.playingCueId)) {
+        stopPlayback();
+      }
+      state.cues = state.cues.filter(c => !toDelete.has(c.id));
+      if (state.selectedCueId && toDelete.has(state.selectedCueId)) {
+        state.selectedCueId = state.cues[0]?.id || null;
+      }
+      state.selectionMode = false;
+      state.checkedCueIds = [];
+      renderAll();
+      await saveWorkspaceToDb();
+      showToast('선택한 곡들을 삭제했습니다.');
     });
 
     jumpToPlayingBtn.addEventListener('click', () => {
@@ -2858,13 +2987,19 @@
     });
     transposeResetBtn.addEventListener('click', () => updateTranspose(0));
 
-    // Per-Cue Gain (dB)
+    // Per-Cue Gain (-30 dB to +30 dB, 0 dB center, glitch-free live update!)
     function updateCueGainDb(dbVal) {
       const cue = getSelectedCue();
       if (!cue) return;
-      cue.gainDb = Math.max(-24, Math.min(6, parseFloat(dbVal)));
-      applyCueDspToLiveGraph(cue);
-      syncInspectorControls();
+      cue.gainDb = Math.max(-30, Math.min(30, parseFloat(dbVal)));
+      if (audioCtx && cueGainNode && state.playingCueId === cue.id) {
+        cueGainNode.gain.setTargetAtTime(Math.pow(10, cue.gainDb / 20), audioCtx.currentTime, 0.015);
+      }
+      cueGainSlider.value = cue.gainDb;
+      const dbStr = (cue.gainDb > 0 ? '+' : '') + cue.gainDb.toFixed(1) + ' dB';
+      const pctVal = Math.round(Math.pow(10, cue.gainDb / 20) * 100);
+      cueGainDbText.textContent = dbStr;
+      cueGainPctText.textContent = `(${pctVal}%)`;
       scheduleAutoSave();
     }
 
@@ -3401,13 +3536,6 @@
       navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
         reg.update().catch(() => {});
       }).catch(() => {});
-      let swRefreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!swRefreshing) {
-          swRefreshing = true;
-          window.location.reload();
-        }
-      });
     }
   </script>
 </body>
